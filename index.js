@@ -39,6 +39,7 @@ class ProTradeAI {
     this.running = false;
     this.signalInterval = null;
     this.monitoringInterval = null;
+    this.cleanupInterval = null; // ✅ Add cleanup interval tracking
   }
 
   /**
@@ -65,6 +66,9 @@ class ProTradeAI {
 
       // Start monitoring
       this.startMonitoring();
+
+      // Start periodic cleanup
+      this.startPeriodicCleanup(); // ✅ Start the periodic cleanup
 
       this.initialized = true;
       this.running = true;
@@ -241,6 +245,15 @@ class ProTradeAI {
 
         logger.info('🔄 Starting signal generation cycle...');
 
+        // ✅ Clean up old deduplication data periodically
+        this.modules.signalEngine.cleanupOldData();
+
+        // ✅ Log deduplication debug info every few cycles
+        if (Math.random() < 0.2) { // 20% chance to log debug info
+          const debugInfo = this.modules.signalEngine.getSignalDebugInfo();
+          logger.debug('🔍 Signal deduplication status:', debugInfo.summary);
+        }
+
         // Generate new signals
         const signals = await this.modules.signalEngine.generateSignals();
 
@@ -251,25 +264,45 @@ class ProTradeAI {
 
         logger.info(`📊 Generated ${signals.length} quality signals`);
 
-        // Process each signal
+        // ✅ Process signals with enhanced deduplication tracking
+        const processedSymbols = new Set();
+        let processedCount = 0;
+
         for (const signalItem of signals) {
           const signal = signalItem.signal;
           
-          // Log signal generation
-          await this.modules.accuracyLogger.logSignal(signal);
+          // ✅ Skip if we've already processed this symbol in this cycle
+          if (processedSymbols.has(signal.symbol)) {
+            logger.debug(`⏭️ Skipping duplicate ${signal.symbol} in same cycle`);
+            continue;
+          }
+          
+          processedSymbols.add(signal.symbol);
+          
+          try {
+            // Log signal generation
+            await this.modules.accuracyLogger.logSignal(signal);
 
-          // Send signal notification to Telegram FIRST
-          await this.modules.telegramBot.sendSignal(signal);
+            // Send signal notification to Telegram FIRST
+            await this.modules.telegramBot.sendSignal(signal);
 
-          // Request approval (handles auto-approval if configured)
-          const approval = await this.modules.signalApprovalBot.requestApproval(signal);
+            // Request approval (handles auto-approval if configured)
+            const approval = await this.modules.signalApprovalBot.requestApproval(signal);
 
-          if (approval.approved) {
-            logger.info(`✅ Signal approved: ${signal.symbol} ${signal.type}`);
-          } else {
-            logger.info(`❌ Signal not approved: ${signal.symbol} ${signal.type} - ${approval.reason}`);
+            if (approval.approved) {
+              logger.info(`✅ Signal approved: ${signal.symbol} ${signal.type} (confidence: ${signal.finalConfidence}%)`);
+            } else {
+              logger.info(`❌ Signal not approved: ${signal.symbol} ${signal.type} - ${approval.reason}`);
+            }
+            
+            processedCount++;
+            
+          } catch (error) {
+            logger.error(`❌ Error processing signal for ${signal.symbol}:`, error.message);
           }
         }
+
+        logger.info(`📊 Processed ${processedCount} unique signals successfully`);
 
       } catch (error) {
         logger.error('❌ Error in trading loop:', error.message);
@@ -306,6 +339,41 @@ class ProTradeAI {
     // Monitor every minute
     this.monitoringInterval = setInterval(monitorPositions, 60000);
     logger.info('👀 Monitoring started (60s intervals)');
+  }
+
+  /**
+   * 🧹 Start periodic cleanup
+   */
+  startPeriodicCleanup() {
+    const cleanup = async () => {
+      try {
+        if (!this.running) return;
+
+        // Clean up signal engine deduplication data
+        this.modules.signalEngine.cleanupOldData();
+
+        // Log detailed deduplication status
+        const debugInfo = this.modules.signalEngine.getSignalDebugInfo();
+        logger.info('🧹 Cleanup completed:', {
+          activeLocks: debugInfo.summary.totalActiveLocks,
+          symbolsTracked: debugInfo.summary.symbolsWithRecentSignals,
+          dailySignals: debugInfo.summary.totalDailySignals
+        });
+
+        // Optional: garbage collection hint
+        if (global.gc) {
+          global.gc();
+          logger.debug('🗑️ Garbage collection triggered');
+        }
+
+      } catch (error) {
+        logger.error('❌ Error in periodic cleanup:', error.message);
+      }
+    };
+
+    // Clean up every 30 minutes
+    this.cleanupInterval = setInterval(cleanup, 30 * 60 * 1000);
+    logger.info('🧹 Periodic cleanup started (30min intervals)');
   }
 
   /**
@@ -415,6 +483,11 @@ class ProTradeAI {
       if (this.monitoringInterval) {
         clearInterval(this.monitoringInterval);
         this.monitoringInterval = null;
+      }
+
+      if (this.cleanupInterval) {
+        clearInterval(this.cleanupInterval);
+        this.cleanupInterval = null;
       }
 
       // Cleanup all modules

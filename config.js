@@ -63,7 +63,7 @@ const config = {
   // 🤖 AI CONFIGURATION WITH LATEST MODELS
   ai: {
     confidence: {
-      minimum: parseFloat(process.env.AI_MIN_CONFIDENCE) || 55, // Slightly lower for more signals
+      minimum: parseFloat(process.env.AI_MIN_CONFIDENCE) || 70, // ✅ INCREASED: Higher bar for signals
       gpt4Weight: parseFloat(process.env.GPT4_WEIGHT) || 35,     // ✅ INCREASED: GPT-4o is more reliable
       claudeWeight: parseFloat(process.env.CLAUDE_WEIGHT) || 30, // ✅ INCREASED: Claude 3.5 Sonnet excellent
       geminiWeight: parseFloat(process.env.GEMINI_WEIGHT) || 20, // ✅ NEW: Gemini 2.0 Flash added
@@ -144,8 +144,16 @@ const config = {
     marketRegimes: ['BULL', 'BEAR', 'SIDEWAYS'],
     updateInterval: parseInt(process.env.UPDATE_INTERVAL) || 300000, // 5 minutes
     strategyRefreshInterval: parseInt(process.env.STRATEGY_REFRESH) || 86400000, // 24 hours
-    minSignalGap: parseInt(process.env.MIN_SIGNAL_GAP) || 900000, // 15 minutes between signals
-    backtestDays: parseInt(process.env.BACKTEST_DAYS) || 30
+    minSignalGap: parseInt(process.env.MIN_SIGNAL_GAP) || 300000, // ✅ ALIGNED: 5 minutes between signals
+    backtestDays: parseInt(process.env.BACKTEST_DAYS) || 30,
+    // ✅ NEW: Signal quality controls
+    signalQuality: {
+      minConfidence: parseFloat(process.env.MIN_SIGNAL_CONFIDENCE) || 75, // Higher bar for signals
+      requireMultiTimeframe: process.env.REQUIRE_MULTI_TF !== 'false', // Need confirmation across timeframes
+      maxDailySignals: parseInt(process.env.MAX_DAILY_SIGNALS) || 12, // Limit to quality signals
+      duplicateTimeWindow: parseInt(process.env.DUPLICATE_TIME_WINDOW) || 1800000, // 30 min duplicate check
+      technicalMinConfidence: parseFloat(process.env.TECH_MIN_CONFIDENCE) || 65 // Technical analysis minimum
+    }
   },
 
   // 📊 MARKET CONTEXT PROTOCOL (MCP)

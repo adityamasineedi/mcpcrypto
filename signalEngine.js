@@ -15,6 +15,12 @@ class SignalEngine {
     this.lastSignals = new Map();
     this.signalHistory = [];
     this.initialized = false;
+    
+    // ✅ Enhanced deduplication tracking
+    this.activeSignalLocks = new Map(); // Track active signals by symbol
+    this.recentSignals = new Map(); // Track recent signals with full details
+    this.dailySignalCount = new Map(); // Track daily signal counts per symbol
+    this.signalDebugInfo = new Map(); // Debug information for monitoring
   }
 
   /**
@@ -99,12 +105,25 @@ class SignalEngine {
   }
 
   /**
-   * 🪙 Generate signal for individual coin
+   * ✅ Generate signal for individual coin with enhanced deduplication
    */
   async generateCoinSignal(symbol, marketContext) {
     try {
-      // Check if too soon since last signal
+      // ✅ Check for active signal lock (prevents concurrent generation)
+      if (this.hasActiveSignalLock(symbol)) {
+        logger.debug(`🔒 Signal lock active for ${symbol}, skipping`);
+        return null;
+      }
+
+      // ✅ Check if too soon since last signal
       if (this.isSignalTooSoon(symbol)) {
+        logger.debug(`⏰ Too soon for new signal for ${symbol}`);
+        return null;
+      }
+
+      // ✅ Check daily signal limit
+      if (this.exceedsDailySignalLimit(symbol)) {
+        logger.debug(`📊 Daily signal limit exceeded for ${symbol}`);
         return null;
       }
 
@@ -122,8 +141,11 @@ class SignalEngine {
       // Generate technical signal
       const technicalSignal = this.generateTechnicalSignal(technicalData, marketContext);
 
-      // Skip if no clear technical signal
-      if (!technicalSignal || technicalSignal.type === 'HOLD') {
+      // ✅ Enhanced technical signal filtering
+      if (!technicalSignal || 
+          technicalSignal.type === 'HOLD' || 
+          technicalSignal.confidence < config.strategy.signalQuality.technicalMinConfidence) {
+        logger.debug(`❌ Weak technical signal for ${symbol}: ${technicalSignal?.type} (${technicalSignal?.confidence}%)`);
         return null;
       }
 
@@ -135,11 +157,27 @@ class SignalEngine {
         proposedSignal: technicalSignal
       });
 
+      // ✅ Enhanced AI confidence check
+      if (aiAnalysis.confidence < config.ai.confidence.minimum + 10) { // +10% buffer for quality
+        logger.debug(`❌ AI confidence too low for ${symbol}: ${aiAnalysis.confidence}%`);
+        return null;
+      }
+
       // Create final signal
       const finalSignal = this.createFinalSignal(symbol, technicalSignal, aiAnalysis, technicalData, marketContext);
 
-      // Update last signal time
+      // ✅ Check for duplicate in time window (more sophisticated than just timing)
+      if (this.isDuplicateInTimeWindow(symbol, finalSignal)) {
+        logger.debug(`🔄 Duplicate signal detected for ${symbol}, skipping`);
+        return null;
+      }
+
+      // ✅ Update tracking systems
       this.lastSignals.set(symbol, Date.now());
+      this.trackRecentSignal(symbol, finalSignal);
+      this.updateDailySignalCount(symbol);
+
+      logger.info(`✅ Generated quality signal: ${symbol} ${finalSignal.type} (confidence: ${finalSignal.finalConfidence}%)`);
 
       return finalSignal;
     } catch (error) {
@@ -994,23 +1032,80 @@ class SignalEngine {
   /**
    * ✨ Filter high-quality signals
    */
+  /**
+   * ✅ Enhanced signal filtering with strict deduplication
+   */
   filterHighQualitySignals(signals, marketContext) {
+    logger.debug('🔍 Filtering signals with enhanced deduplication...');
+    
     return signals.filter(item => {
       const signal = item.signal;
+      const symbol = signal.symbol;
       
-      // Minimum confidence
-      if (signal.finalConfidence < config.ai.confidence.minimum) return false;
+      // 1. ✅ Minimum confidence threshold (now higher)
+      if (signal.finalConfidence < config.strategy.signalQuality.minConfidence) {
+        logger.debug(`❌ ${symbol}: Confidence ${signal.finalConfidence}% below minimum ${config.strategy.signalQuality.minConfidence}%`);
+        return false;
+      }
       
-      // Risk/reward ratio
-      if (signal.riskReward && signal.riskReward < 1.5) return false;
+      // 2. ✅ Technical confidence check
+      if (signal.technicalConfidence < config.strategy.signalQuality.technicalMinConfidence) {
+        logger.debug(`❌ ${symbol}: Technical confidence ${signal.technicalConfidence}% too low`);
+        return false;
+      }
       
-      // Max loss limit
-      if (signal.maxLoss > config.capital.maxTradeAmount * 0.5) return false;
+      // 3. ✅ Check for active signal lock
+      if (this.hasActiveSignalLock(symbol)) {
+        logger.debug(`❌ ${symbol}: Active signal lock prevents new signal`);
+        return false;
+      }
       
-      // Market regime compatibility
-      if (marketContext.regime === 'BEAR' && signal.type === 'LONG' && signal.finalConfidence < 75) return false;
-      if (marketContext.regime === 'BULL' && signal.type === 'SHORT' && signal.finalConfidence < 75) return false;
+      // 4. ✅ Check recent duplicate in time window
+      if (this.isDuplicateInTimeWindow(symbol, signal)) {
+        logger.debug(`❌ ${symbol}: Duplicate signal detected in time window`);
+        return false;
+      }
       
+      // 5. ✅ Daily signal limit per symbol
+      if (this.exceedsDailySignalLimit(symbol)) {
+        logger.debug(`❌ ${symbol}: Daily signal limit exceeded`);
+        return false;
+      }
+      
+      // 6. ✅ Risk/reward ratio
+      if (signal.riskReward && signal.riskReward < 1.5) {
+        logger.debug(`❌ ${symbol}: Risk/reward ratio ${signal.riskReward} too low`);
+        return false;
+      }
+      
+      // 7. ✅ Max loss limit
+      if (signal.maxLoss > config.capital.maxTradeAmount * 0.5) {
+        logger.debug(`❌ ${symbol}: Max loss ${signal.maxLoss} exceeds limit`);
+        return false;
+      }
+      
+      // 8. ✅ Market regime compatibility with higher bars
+      if (marketContext.regime === 'BEAR' && signal.type === 'LONG' && signal.finalConfidence < 80) {
+        logger.debug(`❌ ${symbol}: LONG signal in BEAR market needs >80% confidence`);
+        return false;
+      }
+      if (marketContext.regime === 'BULL' && signal.type === 'SHORT' && signal.finalConfidence < 80) {
+        logger.debug(`❌ ${symbol}: SHORT signal in BULL market needs >80% confidence`);
+        return false;
+      }
+      
+      // 9. ✅ Multi-timeframe confirmation required
+      if (config.strategy.signalQuality.requireMultiTimeframe && !this.hasMultiTimeframeConfirmation(signal)) {
+        logger.debug(`❌ ${symbol}: Multi-timeframe confirmation required but missing`);
+        return false;
+      }
+      
+      // ✅ Signal passed all filters - create lock and track
+      this.createSignalLock(symbol, signal);
+      this.trackRecentSignal(symbol, signal);
+      this.updateDailySignalCount(symbol);
+      
+      logger.debug(`✅ ${symbol}: Signal passed all quality filters (confidence: ${signal.finalConfidence}%)`);
       return true;
     });
   }
@@ -1088,11 +1183,227 @@ class SignalEngine {
    */
   cleanup() {
     this.lastSignals.clear();
+    this.activeSignalLocks.clear();
+    this.recentSignals.clear();
+    this.dailySignalCount.clear();
+    this.signalDebugInfo.clear();
     this.marketFetcher.cleanup();
     this.mcpEngine.cleanup();
     this.aiEngine.cleanup();
     this.coinSelector.cleanup();
     logger.info('🧹 Signal Engine cleaned up');
+  }
+
+  // ============================================================================
+  // ✅ ENHANCED DEDUPLICATION & SIGNAL LOCK SYSTEM
+  // ============================================================================
+
+  /**
+   * 🔒 Check if symbol has active signal lock
+   */
+  hasActiveSignalLock(symbol) {
+    const lock = this.activeSignalLocks.get(symbol);
+    if (!lock) return false;
+    
+    // Check if lock has expired (30 minutes default)
+    const lockDuration = 30 * 60 * 1000; // 30 minutes
+    return (Date.now() - lock.timestamp) < lockDuration;
+  }
+
+  /**
+   * 🔒 Create signal lock to prevent duplicates
+   */
+  createSignalLock(symbol, signal) {
+    this.activeSignalLocks.set(symbol, {
+      timestamp: Date.now(),
+      signalType: signal.type,
+      confidence: signal.finalConfidence,
+      price: signal.entry
+    });
+    
+    logger.debug(`🔒 Created signal lock for ${symbol} (${signal.type} at ${signal.entry})`);
+  }
+
+  /**
+   * 🔓 Release signal lock (called when signal is processed or expires)
+   */
+  releaseSignalLock(symbol) {
+    if (this.activeSignalLocks.has(symbol)) {
+      this.activeSignalLocks.delete(symbol);
+      logger.debug(`🔓 Released signal lock for ${symbol}`);
+    }
+  }
+
+  /**
+   * ⏱️ Check for duplicate signal in time window
+   */
+  isDuplicateInTimeWindow(symbol, newSignal) {
+    const recentSignals = this.recentSignals.get(symbol) || [];
+    const timeWindow = config.strategy.signalQuality.duplicateTimeWindow;
+    const now = Date.now();
+    
+    // Filter recent signals within time window
+    const recentInWindow = recentSignals.filter(sig => 
+      (now - sig.timestamp) < timeWindow
+    );
+    
+    // Check for duplicates
+    for (const recent of recentInWindow) {
+      // Same signal type
+      if (recent.type === newSignal.type) {
+        // Similar price levels (within 2%)
+        const priceDiff = Math.abs(recent.entry - newSignal.entry) / recent.entry;
+        if (priceDiff < 0.02) {
+          logger.debug(`🔍 Duplicate detected: ${symbol} ${newSignal.type} at ${newSignal.entry} vs recent ${recent.entry} (${(priceDiff * 100).toFixed(2)}% diff)`);
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * 📝 Track recent signal for duplicate detection
+   */
+  trackRecentSignal(symbol, signal) {
+    if (!this.recentSignals.has(symbol)) {
+      this.recentSignals.set(symbol, []);
+    }
+    
+    const recentSignals = this.recentSignals.get(symbol);
+    recentSignals.push({
+      timestamp: Date.now(),
+      type: signal.type,
+      entry: signal.entry,
+      confidence: signal.finalConfidence
+    });
+    
+    // Keep only last 10 signals and clean old ones (>24 hours)
+    const dayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    const filtered = recentSignals
+      .filter(sig => sig.timestamp > dayAgo)
+      .slice(-10);
+    
+    this.recentSignals.set(symbol, filtered);
+  }
+
+  /**
+   * 📊 Check daily signal limit
+   */
+  exceedsDailySignalLimit(symbol) {
+    const today = new Date().toDateString();
+    const dailyKey = `${symbol}_${today}`;
+    const count = this.dailySignalCount.get(dailyKey) || 0;
+    
+    const maxDaily = config.strategy.signalQuality.maxDailySignals || 3; // Default 3 per day per symbol
+    return count >= maxDaily;
+  }
+
+  /**
+   * 📈 Update daily signal count
+   */
+  updateDailySignalCount(symbol) {
+    const today = new Date().toDateString();
+    const dailyKey = `${symbol}_${today}`;
+    const current = this.dailySignalCount.get(dailyKey) || 0;
+    this.dailySignalCount.set(dailyKey, current + 1);
+    
+    // Clean old daily counts (keep only last 7 days)
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toDateString();
+    for (const [key] of this.dailySignalCount) {
+      const [, dateStr] = key.split('_');
+      if (dateStr < weekAgo) {
+        this.dailySignalCount.delete(key);
+      }
+    }
+  }
+
+  /**
+   * ⏰ Check multi-timeframe confirmation
+   */
+  hasMultiTimeframeConfirmation(signal) {
+    // For now, assume signal has this property from technical analysis
+    // In a full implementation, this would check multiple timeframes
+    return signal.multiTimeframeConfirmed !== false;
+  }
+
+  /**
+   * 📊 Get signal debug information for monitoring
+   */
+  getSignalDebugInfo() {
+    const now = Date.now();
+    const locks = [];
+    const recentCounts = {};
+    const dailyCounts = {};
+    
+    // Active locks
+    for (const [symbol, lock] of this.activeSignalLocks) {
+      const age = Math.round((now - lock.timestamp) / (60 * 1000)); // minutes
+      locks.push({
+        symbol,
+        type: lock.signalType,
+        ageMinutes: age,
+        confidence: lock.confidence,
+        price: lock.price
+      });
+    }
+    
+    // Recent signal counts (last 24h)
+    for (const [symbol, signals] of this.recentSignals) {
+      const recent = signals.filter(sig => (now - sig.timestamp) < (24 * 60 * 60 * 1000));
+      if (recent.length > 0) {
+        recentCounts[symbol] = recent.length;
+      }
+    }
+    
+    // Daily counts (today)
+    const today = new Date().toDateString();
+    for (const [key, count] of this.dailySignalCount) {
+      const [symbol, dateStr] = key.split('_');
+      if (dateStr === today) {
+        dailyCounts[symbol] = count;
+      }
+    }
+    
+    return {
+      activeLocks: locks,
+      recentSignalCounts: recentCounts,
+      dailySignalCounts: dailyCounts,
+      summary: {
+        totalActiveLocks: locks.length,
+        symbolsWithRecentSignals: Object.keys(recentCounts).length,
+        totalDailySignals: Object.values(dailyCounts).reduce((sum, count) => sum + count, 0)
+      }
+    };
+  }
+
+  /**
+   * 🧹 Clean up old locks and tracking data
+   */
+  cleanupOldData() {
+    const now = Date.now();
+    const hour = 60 * 60 * 1000;
+    
+    // Clean expired locks (older than 1 hour)
+    for (const [symbol, lock] of this.activeSignalLocks) {
+      if ((now - lock.timestamp) > hour) {
+        this.activeSignalLocks.delete(symbol);
+        logger.debug(`🧹 Cleaned expired lock for ${symbol}`);
+      }
+    }
+    
+    // Clean old recent signals (older than 24 hours)
+    const dayAgo = now - (24 * hour);
+    for (const [symbol, signals] of this.recentSignals) {
+      const filtered = signals.filter(sig => sig.timestamp > dayAgo);
+      if (filtered.length !== signals.length) {
+        this.recentSignals.set(symbol, filtered);
+        logger.debug(`🧹 Cleaned ${signals.length - filtered.length} old signals for ${symbol}`);
+      }
+    }
+    
+    logger.debug('🧹 Completed cleanup of old deduplication data');
   }
 }
 
