@@ -192,7 +192,7 @@ class SignalEngine {
   generateMockMarketData(symbol) {
     const basePrices = {
       BTC: 65000, ETH: 3500, SOL: 150, LINK: 15, OP: 2.5,
-      ADA: 0.5, DOT: 7, AVAX: 35, MATIC: 0.8, UNI: 8
+      ADA: 0.5, DOT: 7, AVAX: 35, UNI: 8
     };
     
     const basePrice = basePrices[symbol] || 100;
