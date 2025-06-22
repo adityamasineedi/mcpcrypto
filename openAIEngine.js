@@ -1,6 +1,6 @@
 const OpenAI = require('openai');
 const Anthropic = require('@anthropic-ai/sdk');
-const { GoogleGenerativeAI } = require('@google/generative-ai'); // Add this dependency
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const config = require('./config');
 const logger = require('./utils/logger');
 
@@ -62,20 +62,23 @@ class OpenAIEngine {
     try {
       const { symbol, technicalData, marketContext, proposedSignal } = signalData;
 
+      // Validate technical data before proceeding
+      const validatedTechnicalData = this.validateTechnicalData(technicalData);
+
       // Get AI analyses in parallel
       const [gptAnalysis, claudeAnalysis, geminiAnalysis] = await Promise.allSettled([
-        this.getGPTAnalysis(symbol, technicalData, marketContext, proposedSignal),
-        this.getClaudeAnalysis(symbol, technicalData, marketContext, proposedSignal),
-        this.getGeminiAnalysis(symbol, technicalData, marketContext, proposedSignal)
+        this.getGPTAnalysis(symbol, validatedTechnicalData, marketContext, proposedSignal),
+        this.getClaudeAnalysis(symbol, validatedTechnicalData, marketContext, proposedSignal),
+        this.getGeminiAnalysis(symbol, validatedTechnicalData, marketContext, proposedSignal)
       ]);
 
       // Extract results
-      const gptResult = gptAnalysis.status === 'fulfilled' ? gptAnalysis.value : this.getMockAnalysis();
-      const claudeResult = claudeAnalysis.status === 'fulfilled' ? claudeAnalysis.value : this.getMockAnalysis();
-      const geminiResult = geminiAnalysis.status === 'fulfilled' ? geminiAnalysis.value : this.getMockAnalysis();
+      const gptResult = gptAnalysis.status === 'fulfilled' ? gptAnalysis.value : this.getMockAnalysis('GPT-4o');
+      const claudeResult = claudeAnalysis.status === 'fulfilled' ? claudeAnalysis.value : this.getMockAnalysis('Claude');
+      const geminiResult = geminiAnalysis.status === 'fulfilled' ? geminiAnalysis.value : this.getMockAnalysis('Gemini-2.0');
 
       // Calculate consensus
-      const consensus = this.calculateAIConsensus(gptResult, claudeResult, geminiResult, technicalData);
+      const consensus = this.calculateAIConsensus(gptResult, claudeResult, geminiResult, validatedTechnicalData);
 
       logger.info(`🤖 AI Analysis for ${symbol}:`, {
         gptConfidence: gptResult.confidence,
@@ -90,6 +93,49 @@ class OpenAIEngine {
       logger.error('❌ Error in AI signal analysis:', error.message);
       return this.getMockAnalysis();
     }
+  }
+
+  /**
+   * ✅ Validate and fix technical data
+   */
+  validateTechnicalData(technicalData) {
+    const validated = { ...technicalData };
+
+    // Fix RSI
+    if (typeof validated.rsi !== 'number' || isNaN(validated.rsi)) {
+      validated.rsi = 50; // Neutral RSI
+    }
+
+    // Fix MACD - this is the main issue!
+    if (!validated.macd || typeof validated.macd !== 'object') {
+      validated.macd = {
+        MACD: 0,
+        signal: 0,
+        histogram: 0
+      };
+    } else {
+      // Ensure all MACD properties exist and are numbers
+      validated.macd.MACD = typeof validated.macd.MACD === 'number' ? validated.macd.MACD : 0;
+      validated.macd.signal = typeof validated.macd.signal === 'number' ? validated.macd.signal : 0;
+      validated.macd.histogram = typeof validated.macd.histogram === 'number' ? validated.macd.histogram : 0;
+    }
+
+    // Fix EMAs
+    validated.ema9 = typeof validated.ema9 === 'number' ? validated.ema9 : validated.currentPrice || 0;
+    validated.ema21 = typeof validated.ema21 === 'number' ? validated.ema21 : validated.currentPrice || 0;
+    validated.ema50 = typeof validated.ema50 === 'number' ? validated.ema50 : validated.currentPrice || 0;
+    validated.ema200_4h = typeof validated.ema200_4h === 'number' ? validated.ema200_4h : validated.currentPrice || 0;
+
+    // Fix volume ratio
+    validated.volumeRatio = typeof validated.volumeRatio === 'number' ? validated.volumeRatio : 1;
+
+    // Fix change24h
+    validated.change24h = typeof validated.change24h === 'number' ? validated.change24h : 0;
+
+    // Fix technical score
+    validated.technicalScore = typeof validated.technicalScore === 'number' ? validated.technicalScore : 50;
+
+    return validated;
   }
 
   /**
@@ -176,7 +222,6 @@ Response format must be valid JSON with these exact fields:
       return analysis;
     } catch (error) {
       logger.error('❌ Claude analysis error:', error.message);
-      logger.error('Full error details:', error);
       
       // If it's a 404 or auth error, disable Claude for this session
       if (error.status === 404 || error.status === 401 || error.status === 400) {
@@ -222,7 +267,6 @@ Response format must be valid JSON with these exact fields:
       return analysis;
     } catch (error) {
       logger.error('❌ Gemini analysis error:', error.message);
-      logger.error('Full error details:', error);
       
       // If it's an auth error, disable Gemini for this session
       if (error.status === 403 || error.status === 401 || error.status === 400) {
@@ -234,33 +278,37 @@ Response format must be valid JSON with these exact fields:
   }
 
   /**
-   * 📝 Build GPT prompt
+   * 📝 Build GPT prompt with safe data access
    */
   buildGPTPrompt(symbol, technicalData, marketContext, proposedSignal) {
+    const safeNum = (value, decimals = 2) => {
+      return typeof value === 'number' && !isNaN(value) ? value.toFixed(decimals) : 'N/A';
+    };
+
     return `Analyze this cryptocurrency trading signal for ${symbol}:
 
 MARKET CONTEXT:
-- Market Regime: ${marketContext.regime}
-- Confidence: ${marketContext.confidence}%
-- Fear & Greed: ${marketContext.fearGreedIndex}
-- Sentiment: ${marketContext.sentiment}
-- Volatility: ${marketContext.volatility}
+- Market Regime: ${marketContext.regime || 'UNKNOWN'}
+- Confidence: ${marketContext.confidence || 50}%
+- Fear & Greed: ${marketContext.fearGreedIndex || 50}
+- Sentiment: ${marketContext.sentiment || 'NEUTRAL'}
+- Volatility: ${marketContext.volatility || 'MEDIUM'}
 
 TECHNICAL DATA:
-- Current Price: $${technicalData.currentPrice}
-- RSI: ${technicalData.rsi.toFixed(2)}
-- MACD: ${technicalData.macd.macd.toFixed(4)} (Signal: ${technicalData.macd.signal.toFixed(4)})
-- EMA 9: $${technicalData.ema9.toFixed(2)}
-- EMA 21: $${technicalData.ema21.toFixed(2)}
-- EMA 50: $${technicalData.ema50.toFixed(2)}
-- Volume Ratio: ${technicalData.volumeRatio.toFixed(2)}x
-- 24h Change: ${technicalData.change24h.toFixed(2)}%
+- Current Price: $${safeNum(technicalData.currentPrice, 4)}
+- RSI: ${safeNum(technicalData.rsi, 2)}
+- MACD: ${safeNum(technicalData.macd.MACD, 4)} (Signal: ${safeNum(technicalData.macd.signal, 4)})
+- EMA 9: $${safeNum(technicalData.ema9, 2)}
+- EMA 21: $${safeNum(technicalData.ema21, 2)}
+- EMA 50: $${safeNum(technicalData.ema50, 2)}
+- Volume Ratio: ${safeNum(technicalData.volumeRatio, 2)}x
+- 24h Change: ${safeNum(technicalData.change24h, 2)}%
 
 PROPOSED SIGNAL:
 - Type: ${proposedSignal.type}
 - Strength: ${proposedSignal.strength}
-- Entry Price: $${proposedSignal.entryPrice}
-- Technical Confidence: ${proposedSignal.confidence}%
+- Entry Price: $${safeNum(proposedSignal.entryPrice, 4)}
+- Technical Confidence: ${proposedSignal.confidence || 50}%
 
 TRADING PARAMETERS:
 - Capital: $${config.capital.total}
@@ -278,32 +326,36 @@ Focus on ACTIONABLE insights for a ${config.capital.total} account with ${config
   }
 
   /**
-   * 📝 Build Claude prompt
+   * 📝 Build Claude prompt with safe data access
    */
   buildClaudePrompt(symbol, technicalData, marketContext, proposedSignal) {
+    const safeNum = (value, decimals = 2) => {
+      return typeof value === 'number' && !isNaN(value) ? value.toFixed(decimals) : 'N/A';
+    };
+
     return `As a cryptocurrency trading analyst, evaluate this ${symbol} signal:
 
 🎯 SIGNAL EVALUATION REQUEST
 ${symbol} | ${proposedSignal.type} | Strength: ${proposedSignal.strength}
 
 📊 MARKET DATA:
-• Regime: ${marketContext.regime} (${marketContext.confidence}% confidence)
-• Fear/Greed: ${marketContext.fearGreedIndex}/100
-• Sentiment: ${marketContext.sentiment}
-• Volatility: ${marketContext.volatility}
+• Regime: ${marketContext.regime || 'UNKNOWN'} (${marketContext.confidence || 50}% confidence)
+• Fear/Greed: ${marketContext.fearGreedIndex || 50}/100
+• Sentiment: ${marketContext.sentiment || 'NEUTRAL'}
+• Volatility: ${marketContext.volatility || 'MEDIUM'}
 
 📈 TECHNICAL INDICATORS:
-• Price: $${technicalData.currentPrice}
-• RSI(14): ${technicalData.rsi.toFixed(1)}
-• MACD: ${technicalData.macd.macd.toFixed(4)} vs Signal ${technicalData.macd.signal.toFixed(4)}
-• EMAs: 9($${technicalData.ema9.toFixed(2)}) | 21($${technicalData.ema21.toFixed(2)}) | 50($${technicalData.ema50.toFixed(2)})
-• Volume: ${technicalData.volumeRatio.toFixed(1)}x average
-• 24h Change: ${technicalData.change24h.toFixed(1)}%
+• Price: $${safeNum(technicalData.currentPrice, 4)}
+• RSI(14): ${safeNum(technicalData.rsi, 1)}
+• MACD: ${safeNum(technicalData.macd.MACD, 4)} vs Signal ${safeNum(technicalData.macd.signal, 4)}
+• EMAs: 9($${safeNum(technicalData.ema9, 2)}) | 21($${safeNum(technicalData.ema21, 2)}) | 50($${safeNum(technicalData.ema50, 2)})
+• Volume: ${safeNum(technicalData.volumeRatio, 1)}x average
+• 24h Change: ${safeNum(technicalData.change24h, 1)}%
 
 🎲 PROPOSED TRADE:
 • Direction: ${proposedSignal.type}
-• Entry: $${proposedSignal.entryPrice}
-• Technical Score: ${proposedSignal.confidence}%
+• Entry: $${safeNum(proposedSignal.entryPrice, 4)}
+• Technical Score: ${proposedSignal.confidence || 50}%
 
 💼 RISK PARAMETERS:
 • Account: $${config.capital.total}
@@ -325,32 +377,36 @@ Focus on: indicator convergence, market regime alignment, optimal risk/reward se
   }
 
   /**
-   * 📝 Build Gemini prompt
+   * 📝 Build Gemini prompt with safe data access
    */
   buildGeminiPrompt(symbol, technicalData, marketContext, proposedSignal) {
+    const safeNum = (value, decimals = 2) => {
+      return typeof value === 'number' && !isNaN(value) ? value.toFixed(decimals) : 'N/A';
+    };
+
     return `As Gemini 2.0 Flash, analyze this ${symbol} trading signal with your speed and accuracy:
 
 🎯 REAL-TIME SIGNAL ANALYSIS
 Symbol: ${symbol} | Action: ${proposedSignal.type} | Strength: ${proposedSignal.strength}
 
 📊 MARKET STATE:
-• Regime: ${marketContext.regime} (${marketContext.confidence}% confidence)
-• Fear/Greed: ${marketContext.fearGreedIndex}/100
-• Sentiment: ${marketContext.sentiment}
-• Volatility: ${marketContext.volatility}
+• Regime: ${marketContext.regime || 'UNKNOWN'} (${marketContext.confidence || 50}% confidence)
+• Fear/Greed: ${marketContext.fearGreedIndex || 50}/100
+• Sentiment: ${marketContext.sentiment || 'NEUTRAL'}
+• Volatility: ${marketContext.volatility || 'MEDIUM'}
 
 📈 TECHNICAL SNAPSHOT:
-• Price: $${technicalData.currentPrice}
-• RSI: ${technicalData.rsi.toFixed(1)}
-• MACD: ${technicalData.macd.macd.toFixed(4)} vs Signal ${technicalData.macd.signal.toFixed(4)}
-• EMAs: 9($${technicalData.ema9.toFixed(2)}) | 21($${technicalData.ema21.toFixed(2)}) | 50($${technicalData.ema50.toFixed(2)})
-• Volume: ${technicalData.volumeRatio.toFixed(1)}x average
-• 24h Change: ${technicalData.change24h.toFixed(1)}%
+• Price: $${safeNum(technicalData.currentPrice, 4)}
+• RSI: ${safeNum(technicalData.rsi, 1)}
+• MACD: ${safeNum(technicalData.macd.MACD, 4)} vs Signal ${safeNum(technicalData.macd.signal, 4)}
+• EMAs: 9($${safeNum(technicalData.ema9, 2)}) | 21($${safeNum(technicalData.ema21, 2)}) | 50($${safeNum(technicalData.ema50, 2)})
+• Volume: ${safeNum(technicalData.volumeRatio, 1)}x average
+• 24h Change: ${safeNum(technicalData.change24h, 1)}%
 
 🎲 PROPOSED EXECUTION:
 • Direction: ${proposedSignal.type}
-• Entry: $${proposedSignal.entryPrice}
-• Technical Score: ${proposedSignal.confidence}%
+• Entry: $${safeNum(proposedSignal.entryPrice, 4)}
+• Technical Score: ${proposedSignal.confidence || 50}%
 
 💼 RISK CONTEXT:
 • Account: $${config.capital.total}
@@ -377,28 +433,23 @@ Leverage your real-time processing power for optimal market timing.`;
   calculateAIConsensus(gptResult, claudeResult, geminiResult, technicalData) {
     const weights = config.ai.confidence;
     
-    // Weight the confidences
-    const weightedGPT = (gptResult.confidence * weights.gpt4Weight) / 100;
-    const weightedClaude = (claudeResult.confidence * weights.claudeWeight) / 100;
-    const weightedGemini = (geminiResult.confidence * weights.geminiWeight) / 100;
-    const weightedTechnical = (technicalData.technicalScore * weights.technicalWeight) / 100;
+    // Weight the confidences with safe fallbacks
+    const gptConfidence = typeof gptResult.confidence === 'number' ? gptResult.confidence : 50;
+    const claudeConfidence = typeof claudeResult.confidence === 'number' ? claudeResult.confidence : 50;
+    const geminiConfidence = typeof geminiResult.confidence === 'number' ? geminiResult.confidence : 50;
+    const technicalScore = typeof technicalData.technicalScore === 'number' ? technicalData.technicalScore : 50;
+
+    const weightedGPT = (gptConfidence * weights.gpt4Weight) / 100;
+    const weightedClaude = (claudeConfidence * weights.claudeWeight) / 100;
+    const weightedGemini = (geminiConfidence * weights.geminiWeight) / 100;
+    const weightedTechnical = (technicalScore * weights.technicalWeight) / 100;
     
-    // Calculate final confidence - ensure it's not null
+    // Calculate final confidence
     let finalConfidence = weightedGPT + weightedClaude + weightedGemini + weightedTechnical;
-  
-  // Ensure finalConfidence is a valid number
-  if (isNaN(finalConfidence) || finalConfidence === null || finalConfidence === undefined) {
-    finalConfidence = Math.max(gptResult.confidence, claudeResult.confidence, geminiResult.confidence, technicalData.technicalScore || 50);
-  }
-  
-  // Ensure finalConfidence is a valid number
-  if (isNaN(finalConfidence) || finalConfidence === null || finalConfidence === undefined) {
-    finalConfidence = Math.max(gptResult.confidence, claudeResult.confidence, geminiResult.confidence, technicalData.technicalScore || 50);
-  }
     
     // Ensure finalConfidence is a valid number
     if (isNaN(finalConfidence) || finalConfidence === null || finalConfidence === undefined) {
-      finalConfidence = Math.max(gptResult.confidence, claudeResult.confidence, geminiResult.confidence, technicalData.technicalScore || 50);
+      finalConfidence = Math.max(gptConfidence, claudeConfidence, geminiConfidence, technicalScore);
     }
     
     // Determine consensus recommendation
@@ -425,21 +476,23 @@ Leverage your real-time processing power for optimal market timing.`;
       time_horizon: this.getConsensusTimeHorizon(gptResult.time_horizon, claudeResult.time_horizon, geminiResult.time_horizon),
       ai_sources: {
         gpt: {
-          confidence: gptResult.confidence,
+          confidence: gptConfidence,
           recommendation: gptResult.recommendation
         },
         claude: {
-          confidence: claudeResult.confidence,
+          confidence: claudeConfidence,
           recommendation: claudeResult.recommendation
         },
         gemini: {
-          confidence: geminiResult.confidence,
+          confidence: geminiConfidence,
           recommendation: geminiResult.recommendation
         }
       }
     };
   }
 
+  // ... (rest of the methods remain the same)
+  
   /**
    * 📊 Get consensus recommendation
    */
@@ -487,7 +540,7 @@ Leverage your real-time processing power for optimal market timing.`;
     const risks = [gptResult.risk_level, claudeResult.risk_level, geminiResult.risk_level];
     const riskScores = { 'LOW': 1, 'MEDIUM': 2, 'HIGH': 3 };
     
-    const avgRisk = risks.reduce((sum, risk) => sum + riskScores[risk], 0) / risks.length;
+    const avgRisk = risks.reduce((sum, risk) => sum + (riskScores[risk] || 2), 0) / risks.length;
     
     // Factor in volatility
     if (technicalData.volatility > 6) return 'HIGH';
@@ -574,8 +627,8 @@ Leverage your real-time processing power for optimal market timing.`;
     
     // Add key insight from the most confident model
     const mostConfident = [gptResult, claudeResult, geminiResult]
-      .sort((a, b) => b.confidence - a.confidence)[0];
-    reasoning += `Key insight: ${mostConfident.reasoning.split('.')[0]}.`;
+      .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0];
+    reasoning += `Key insight: ${(mostConfident.reasoning || 'Market analysis pending').split('.')[0]}.`;
     
     return reasoning;
   }
@@ -602,7 +655,7 @@ Leverage your real-time processing power for optimal market timing.`;
       }
       
       // Normalize values
-      parsed.confidence = Math.max(0, Math.min(100, parseInt(parsed.confidence)));
+      parsed.confidence = Math.max(0, Math.min(100, parseInt(parsed.confidence) || 50));
       parsed.source = source;
       
       return parsed;
@@ -629,94 +682,6 @@ Leverage your real-time processing power for optimal market timing.`;
       stop_loss: null,
       time_horizon: timeHorizons[Math.floor(Math.random() * timeHorizons.length)],
       source
-    };
-  }
-
-  /**
-   * 🔮 Generate daily strategy refresh
-   */
-  async generateDailyStrategy(marketContext, coinAnalysis) {
-    try {
-      const prompt = `Generate 3 fresh trading strategies for today's crypto market:
-
-MARKET CONTEXT:
-- Regime: ${marketContext.regime}
-- Fear & Greed: ${marketContext.fearGreedIndex}
-- Sentiment: ${marketContext.sentiment}
-- Top Coins: ${coinAnalysis.slice(0, 5).map(c => c.symbol).join(', ')}
-
-Requirements:
-- Low-risk setups with 75%+ win potential
-- $50+ daily profit target
-- Suitable for ${config.capital.total} account
-- Maximum ${config.capital.maxConcurrentTrades} positions
-
-Return JSON with 3 strategies:
-{
-  "strategies": [
-    {
-      "name": "strategy name",
-      "description": "brief description",
-      "coins": ["COIN1", "COIN2"],
-      "setup": "entry conditions",
-      "risk": "LOW|MEDIUM|HIGH",
-      "profit_potential": "daily $ estimate"
-    }
-  ]
-}`;
-
-      if (this.openai && !config.testMode) {
-        const response = await this.openai.chat.completions.create({
-          model: config.ai.openai.model,
-          messages: [
-            { role: "system", content: "You are a crypto strategy generator. Return valid JSON only." },
-            { role: "user", content: prompt }
-          ],
-          max_tokens: 800,
-          temperature: 0.7
-        });
-        
-        return this.parseAIResponse(response.choices[0].message.content, 'Strategy');
-      }
-      
-      return this.getMockDailyStrategy();
-    } catch (error) {
-      logger.error('❌ Error generating daily strategy:', error.message);
-      return this.getMockDailyStrategy();
-    }
-  }
-
-  /**
-   * 🎲 Mock daily strategy
-   */
-  getMockDailyStrategy() {
-    return {
-      strategies: [
-        {
-          name: "EMA Breakout",
-          description: "9/21 EMA crossover with volume confirmation",
-          coins: ["BTC", "ETH"],
-          setup: "Price above EMAs + volume spike",
-          risk: "LOW",
-          profit_potential: "$20-30"
-        },
-        {
-          name: "RSI Reversal",
-          description: "Oversold RSI bounce in uptrend",
-          coins: ["SOL", "LINK"],
-          setup: "RSI < 35 + bullish divergence",
-          risk: "MEDIUM",
-          profit_potential: "$15-25"
-        },
-        {
-          name: "MACD Momentum",
-          description: "MACD histogram growing + trend alignment",
-          coins: ["ADA", "DOT"],
-          setup: "MACD > signal + increasing histogram",
-          risk: "LOW",
-          profit_potential: "$10-20"
-        }
-      ]
     };
   }
 

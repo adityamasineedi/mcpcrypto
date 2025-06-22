@@ -140,29 +140,49 @@ class CoinSelector {
   async analyzeCoins(symbols) {
     logger.info(`🔬 Analyzing ${symbols.length} coins...`);
     
-    const analysisPromises = symbols.map(symbol => this.analyzeCoin(symbol));
-    const results = await Promise.allSettled(analysisPromises);
+    const results = [];
     
-    return results
-      .map((result, index) => ({
-        symbol: symbols[index],
-        analysis: result.status === 'fulfilled' ? result.value : null,
-        error: result.status === 'rejected' ? result.reason?.message : null
-      }))
-      .filter(item => item.analysis !== null);
+    // Process coins sequentially to avoid rate limits
+    for (let i = 0; i < symbols.length; i++) {
+      const symbol = symbols[i];
+      try {
+        const analysis = await this.analyzeCoin(symbol);
+        results.push({
+          symbol,
+          analysis,
+          error: null
+        });
+        
+        // Add delay between coin analysis to respect rate limits
+        if (i < symbols.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay
+        }
+      } catch (error) {
+        logger.debug(`⚠️ Error analyzing ${symbol}: ${error.message}`);
+        results.push({
+          symbol,
+          analysis: null,
+          error: error.message
+        });
+      }
+    }
+    
+    return results.filter(item => item.analysis !== null);
   }
 
   /**
-   * 📊 Analyze individual coin
+   * 📊 Analyze individual coin with sequential data fetching
    */
   async analyzeCoin(symbol) {
     try {
-      // Get market data
-      const [ticker, klines4h, klines1h] = await Promise.all([
-        this.marketFetcher.get24hTicker(symbol),
-        this.marketFetcher.getKlines(symbol, '4h', 50),
-        this.marketFetcher.getKlines(symbol, '1h', 100)
-      ]);
+      // Get market data sequentially to avoid rate limits
+      const ticker = await this.marketFetcher.get24hTicker(symbol);
+      await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+      
+      const klines4h = await this.marketFetcher.getKlines(symbol, '4h', 50);
+      await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+      
+      const klines1h = await this.marketFetcher.getKlines(symbol, '1h', 100);
 
       // Calculate scores
       const volumeScore = this.calculateVolumeScore(ticker);

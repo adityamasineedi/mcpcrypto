@@ -12,6 +12,14 @@ class MarketFetcher {
     this.cacheTimeout = 30000; // 30 seconds cache
     this.rateLimiter = new Map();
     this.initialized = false;
+    
+    // Enhanced rate limiting
+    this.requestQueue = [];
+    this.isProcessingQueue = false;
+    this.requestDelay = 200; // 200ms between requests
+    this.maxConcurrentRequests = 3;
+    this.currentRequests = 0;
+    this.lastRequestTime = 0;
   }
 
   /**
@@ -203,7 +211,7 @@ class MarketFetcher {
   }
 
   /**
-   * 📊 Get OHLCV kline data
+   * 📊 Get OHLCV kline data with retry logic and better rate limiting
    */
   async getKlines(symbol, interval = '15m', limit = 100) {
     const cacheKey = `klines_${symbol}_${interval}_${limit}`;
@@ -217,30 +225,61 @@ class MarketFetcher {
       if (config.mockData.enabled) {
         klines = this.generateMockKlines(symbol, interval, limit);
       } else {
-        const response = await this.makeRequest('GET', '/openApi/swap/v3/quote/klines', {
-          symbol: this.formatSymbol(symbol),
-          interval: interval,
-          limit: limit
-        });
+        // Try with improved retry logic
+        let retries = 2; // Reduced retries to avoid rate limits
+        let lastError;
+        
+        while (retries > 0) {
+          try {
+            const response = await this.makeRequest('GET', '/openApi/swap/v3/quote/klines', {
+              symbol: this.formatSymbol(symbol),
+              interval: interval,
+              limit: Math.min(limit, 500) // Reduced limit to avoid heavy responses
+            });
 
-        klines = response.data.map(k => ({
-          timestamp: parseInt(k[0]),
-          open: parseFloat(k[1]),
-          high: parseFloat(k[2]),
-          low: parseFloat(k[3]),
-          close: parseFloat(k[4]),
-          volume: parseFloat(k[5]),
-          closeTime: parseInt(k[6]),
-          quoteVolume: parseFloat(k[7]),
-          trades: parseInt(k[8])
-        }));
+            if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+              klines = response.data.map(k => ({
+                timestamp: parseInt(k[0]),
+                open: parseFloat(k[1]),
+                high: parseFloat(k[2]),
+                low: parseFloat(k[3]),
+                close: parseFloat(k[4]),
+                volume: parseFloat(k[5]),
+                closeTime: parseInt(k[6]),
+                quoteVolume: parseFloat(k[7]) || parseFloat(k[5]) * parseFloat(k[4]),
+                trades: parseInt(k[8]) || 100
+              })).filter(k => !isNaN(k.close) && k.close > 0); // Filter invalid data
+              
+              if (klines.length > 0) {
+                break; // Success, exit retry loop
+              } else {
+                throw new Error('No valid klines data after filtering');
+              }
+            } else {
+              throw new Error('Invalid klines response format or empty data');
+            }
+          } catch (error) {
+            lastError = error;
+            retries--;
+            if (retries > 0) {
+              logger.debug(`⚠️ Klines retry for ${symbol} (${retries} left): ${error.message}`);
+              // Longer delay for retries to avoid rate limits
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+        }
+        
+        if (!klines || klines.length === 0) {
+          throw lastError || new Error('Failed to fetch klines after retries');
+        }
       }
 
-      this.setCache(cacheKey, klines, 30000); // Cache for 30 seconds
+      this.setCache(cacheKey, klines, 60000); // Cache for 1 minute (longer cache)
       return klines;
     } catch (error) {
-      logger.error(`❌ Error fetching klines for ${symbol}:`, error.message);
-      return this.generateMockKlines(symbol, interval, limit); // Fallback to mock
+      logger.debug(`⚠️ Klines fallback for ${symbol}: ${error.message}`);
+      // Return mock data as fallback
+      return this.generateMockKlines(symbol, interval, limit);
     }
   }
 
@@ -317,57 +356,133 @@ class MarketFetcher {
   }
 
   /**
-   * 🌐 Get multiple tickers at once
+   * 🌐 Get multiple tickers at once with sequential processing
    */
   async getMultipleTickers(symbols) {
-    const promises = symbols.map(symbol => this.get24hTicker(symbol));
-    const results = await Promise.allSettled(promises);
+    const results = [];
     
-    return results
-      .map((result, index) => ({
-        symbol: symbols[index],
-        data: result.status === 'fulfilled' ? result.value : null,
-        error: result.status === 'rejected' ? result.reason : null
-      }))
-      .filter(item => item.data !== null);
+    // Process sequentially to avoid rate limits
+    for (const symbol of symbols) {
+      try {
+        const ticker = await this.get24hTicker(symbol);
+        results.push({
+          symbol,
+          data: ticker,
+          error: null
+        });
+        
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        results.push({
+          symbol,
+          data: null,
+          error: error.message
+        });
+      }
+    }
+    
+    return results.filter(item => item.data !== null);
   }
 
   /**
-   * 📡 Make authenticated API request
+   * 📡 Make authenticated API request with queue management
    */
   async makeRequest(method, endpoint, params = {}) {
-    if (!this.checkRateLimit()) {
-      throw new Error('Rate limit exceeded');
-    }
-
-    const timestamp = Date.now();
-    const queryString = new URLSearchParams(params).toString();
-    
-    let url = `${this.baseURL}${endpoint}`;
-    if (queryString) {
-      url += `?${queryString}`;
-    }
-
-    const headers = {
-      'X-BX-APIKEY': this.apiKey,
-      'Content-Type': 'application/json'
-    };
-
-    // Add signature for authenticated endpoints
-    if (this.needsSignature(endpoint)) {
-      const signaturePayload = `${timestamp}${method}${endpoint.split('/openApi')[1]}${queryString}`;
-      const signature = crypto.createHmac('sha256', this.secret).update(signaturePayload).digest('hex');
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push({
+        method,
+        endpoint,
+        params,
+        resolve,
+        reject,
+        timestamp: Date.now()
+      });
       
-      headers['X-BX-TIMESTAMP'] = timestamp;
-      headers['X-BX-SIGNATURE'] = signature;
+      if (!this.isProcessingQueue) {
+        this.processRequestQueue();
+      }
+    });
+  }
+
+  /**
+   * 🔄 Process request queue with rate limiting
+   */
+  async processRequestQueue() {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return;
     }
 
+    this.isProcessingQueue = true;
+
+    while (this.requestQueue.length > 0 && this.currentRequests < this.maxConcurrentRequests) {
+      const request = this.requestQueue.shift();
+      
+      // Check if request is too old (timeout after 30 seconds)
+      if (Date.now() - request.timestamp > 30000) {
+        request.reject(new Error('Request timeout'));
+        continue;
+      }
+
+      this.currentRequests++;
+      this.executeRequest(request);
+      
+      // Add delay between requests
+      if (this.requestQueue.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, this.requestDelay));
+      }
+    }
+
+    this.isProcessingQueue = false;
+    
+    // Continue processing if there are more requests
+    if (this.requestQueue.length > 0) {
+      setTimeout(() => this.processRequestQueue(), this.requestDelay);
+    }
+  }
+
+  /**
+   * ⚡ Execute individual request
+   */
+  async executeRequest(request) {
     try {
+      const { method, endpoint, params, resolve, reject } = request;
+      
+      // Ensure minimum delay between requests
+      const timeSinceLastRequest = Date.now() - this.lastRequestTime;
+      if (timeSinceLastRequest < this.requestDelay) {
+        await new Promise(resolve => setTimeout(resolve, this.requestDelay - timeSinceLastRequest));
+      }
+
+      const timestamp = Date.now();
+      const queryString = new URLSearchParams(params).toString();
+      
+      let url = `${this.baseURL}${endpoint}`;
+      if (queryString) {
+        url += `?${queryString}`;
+      }
+
+      const headers = {
+        'X-BX-APIKEY': this.apiKey,
+        'Content-Type': 'application/json'
+      };
+
+      // Add signature for authenticated endpoints
+      if (this.needsSignature(endpoint)) {
+        const signaturePayload = `${timestamp}${method}${endpoint.split('/openApi')[1]}${queryString}`;
+        const signature = crypto.createHmac('sha256', this.secret).update(signaturePayload).digest('hex');
+        
+        headers['X-BX-TIMESTAMP'] = timestamp;
+        headers['X-BX-SIGNATURE'] = signature;
+      }
+
+      this.lastRequestTime = Date.now();
+
       const response = await axios({
         method,
         url,
         headers,
-        timeout: 10000
+        timeout: 15000 // Increased timeout
       });
 
       // Enhanced BingX response validation
@@ -385,18 +500,30 @@ class MarketFetcher {
         throw new Error('Invalid BingX response structure: missing data field');
       }
 
-      return response;
+      resolve(response);
     } catch (error) {
+      let errorMessage;
       if (error.response) {
         // API responded with error status
-        throw new Error(`BingX API HTTP ${error.response.status}: ${error.response.data?.msg || error.message}`);
+        if (error.response.status === 429) {
+          // Rate limit hit, increase delay
+          this.requestDelay = Math.min(this.requestDelay * 1.5, 2000);
+          logger.warn(`🚦 Rate limit hit, increasing delay to ${this.requestDelay}ms`);
+          errorMessage = `BingX API rate limit exceeded`;
+        } else {
+          errorMessage = `BingX API HTTP ${error.response.status}: ${error.response.data?.msg || error.message}`;
+        }
       } else if (error.request) {
         // Network error
-        throw new Error(`BingX API network error: ${error.message}`);
+        errorMessage = `BingX API network error: ${error.message}`;
       } else {
         // Other error
-        throw error;
+        errorMessage = error.message;
       }
+      
+      request.reject(new Error(errorMessage));
+    } finally {
+      this.currentRequests--;
     }
   }
 
@@ -436,6 +563,27 @@ class MarketFetcher {
     
     this.rateLimiter.set(minute, requests + 1);
     return true;
+  }
+
+  /**
+   * 🚦 Reset rate limiting parameters
+   */
+  resetRateLimit() {
+    this.requestDelay = 200;
+    this.maxConcurrentRequests = 3;
+    logger.debug('🚦 Rate limiting parameters reset');
+  }
+
+  /**
+   * 📊 Get current queue status
+   */
+  getQueueStatus() {
+    return {
+      queueLength: this.requestQueue.length,
+      isProcessing: this.isProcessingQueue,
+      currentRequests: this.currentRequests,
+      requestDelay: this.requestDelay
+    };
   }
 
   /**
@@ -575,6 +723,9 @@ class MarketFetcher {
   cleanup() {
     this.cache.clear();
     this.rateLimiter.clear();
+    this.requestQueue = [];
+    this.isProcessingQueue = false;
+    this.currentRequests = 0;
     logger.info('🧹 MarketFetcher cleaned up');
   }
 }
