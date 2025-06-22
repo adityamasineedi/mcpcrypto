@@ -144,8 +144,9 @@ class SignalEngine {
       // ✅ Enhanced technical signal filtering
       if (!technicalSignal || 
           technicalSignal.type === 'HOLD' || 
+          technicalSignal.strength === 'WEAK' ||
           technicalSignal.confidence < config.strategy.signalQuality.technicalMinConfidence) {
-        logger.debug(`❌ Weak technical signal for ${symbol}: ${technicalSignal?.type} (${technicalSignal?.confidence}%)`);
+        logger.debug(`❌ Weak/HOLD technical signal for ${symbol}: ${technicalSignal?.type}/${technicalSignal?.strength} (${technicalSignal?.confidence}%)`);
         return null;
       }
 
@@ -1042,9 +1043,21 @@ class SignalEngine {
       const signal = item.signal;
       const symbol = signal.symbol;
       
-      // 1. ✅ Minimum confidence threshold (now higher)
-      if (signal.finalConfidence < config.strategy.signalQuality.minConfidence) {
-        logger.debug(`❌ ${symbol}: Confidence ${signal.finalConfidence}% below minimum ${config.strategy.signalQuality.minConfidence}%`);
+      // 🚨 CRITICAL: Block ALL HOLD and WEAK signals IMMEDIATELY
+      if (signal.type === 'HOLD') {
+        logger.info(`🚫 ${symbol}: HOLD signal blocked - no HOLD signals allowed`);
+        return false;
+      }
+      
+      if (signal.strength === 'WEAK') {
+        logger.info(`🚫 ${symbol}: WEAK signal blocked - only MEDIUM/STRONG allowed`);
+        return false;
+      }
+      
+      // 🚨 CRITICAL: Block low confidence signals immediately  
+      const minConfidence = parseFloat(process.env.MIN_SIGNAL_CONFIDENCE) || 75;
+      if (signal.finalConfidence < minConfidence) {
+        logger.info(`🚫 ${symbol}: Low confidence ${signal.finalConfidence}% blocked (minimum: ${minConfidence}%)`);
         return false;
       }
       

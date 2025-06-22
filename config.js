@@ -139,20 +139,21 @@ const config = {
 
   // 📈 STRATEGY CONFIGURATION
   strategy: {
-    signalTypes: ['LONG', 'SHORT', 'HOLD'],
-    signalStrength: ['WEAK', 'MEDIUM', 'STRONG'],
+    signalTypes: ['LONG', 'SHORT'], // ✅ REMOVED 'HOLD' - no HOLD signals should be sent
+    signalStrength: ['MEDIUM', 'STRONG'], // ✅ REMOVED 'WEAK' - only quality signals
     marketRegimes: ['BULL', 'BEAR', 'SIDEWAYS'],
     updateInterval: parseInt(process.env.UPDATE_INTERVAL) || 300000, // 5 minutes
     strategyRefreshInterval: parseInt(process.env.STRATEGY_REFRESH) || 86400000, // 24 hours
-    minSignalGap: parseInt(process.env.MIN_SIGNAL_GAP) || 300000, // ✅ ALIGNED: 5 minutes between signals
+    minSignalGap: parseInt(process.env.MIN_SIGNAL_GAP) || 900000, // ✅ INCREASED: 15 minutes between signals
     backtestDays: parseInt(process.env.BACKTEST_DAYS) || 30,
     // ✅ NEW: Signal quality controls
     signalQuality: {
       minConfidence: parseFloat(process.env.MIN_SIGNAL_CONFIDENCE) || 75, // Higher bar for signals
       requireMultiTimeframe: process.env.REQUIRE_MULTI_TF !== 'false', // Need confirmation across timeframes
-      maxDailySignals: parseInt(process.env.MAX_DAILY_SIGNALS) || 12, // Limit to quality signals
+      maxDailySignals: parseInt(process.env.MAX_DAILY_SIGNALS) || 6, // ✅ REDUCED: Limit to 6 quality signals per day
       duplicateTimeWindow: parseInt(process.env.DUPLICATE_TIME_WINDOW) || 1800000, // 30 min duplicate check
-      technicalMinConfidence: parseFloat(process.env.TECH_MIN_CONFIDENCE) || 65 // Technical analysis minimum
+      technicalMinConfidence: parseFloat(process.env.TECH_MIN_CONFIDENCE) || 70, // ✅ INCREASED: Higher technical bar
+      blockHoldSignals: process.env.BLOCK_HOLD_SIGNALS !== 'false' // ✅ NEW: Block HOLD signals by default
     }
   },
 
