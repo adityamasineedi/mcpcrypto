@@ -1,0 +1,39 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.*
+
+# Build output
+dist/
+build/
+out/
+coverage/
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Misc
+*.local
+*.cache
+*.tmp
+*.swp
+*.bak
+*.orig
+node_modules/.bin/telegraf.ps1

@@ -1,0 +1,375 @@
+[
+  {
+    "id": "ETH_1750592685432",
+    "symbol": "ETH",
+    "type": "SHORT",
+    "strength": "WEAK",
+    "confidence": 61,
+    "entryPrice": 2269.26846,
+    "currentPrice": 2271.54,
+    "stopLoss": 2337.3465137999997,
+    "takeProfit": 2155.8050369999996,
+    "risk": "LOW",
+    "timeHorizon": "MEDIUM",
+    "positionSize": 18,
+    "marketRegime": "SIDEWAYS",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 84,
+        "recommendation": "SELL"
+      },
+      "claude": {
+        "confidence": 73,
+        "recommendation": "SELL"
+      }
+    },
+    "technicalScore": 70,
+    "timestamp": 1750592685432,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "SOL_1750593391543",
+    "symbol": "SOL",
+    "type": "HOLD",
+    "strength": "WEAK",
+    "confidence": 60,
+    "entryPrice": 132.771096,
+    "currentPrice": 132.904,
+    "stopLoss": 136.75422888,
+    "takeProfit": 126.13254119999999,
+    "risk": "MEDIUM",
+    "timeHorizon": "MEDIUM",
+    "positionSize": 15,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 71,
+        "recommendation": "HOLD"
+      },
+      "claude": {
+        "confidence": 83,
+        "recommendation": "HOLD"
+      }
+    },
+    "technicalScore": 70,
+    "timestamp": 1750593391543,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "BTC_1750593391525",
+    "symbol": "BTC",
+    "type": "HOLD",
+    "strength": "WEAK",
+    "confidence": 55,
+    "entryPrice": 102748.14549999998,
+    "currentPrice": 102645.5,
+    "stopLoss": 99665.70113499998,
+    "takeProfit": 107885.55277499999,
+    "risk": "HIGH",
+    "timeHorizon": "SHORT",
+    "positionSize": 12,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 61,
+        "recommendation": "BUY"
+      },
+      "claude": {
+        "confidence": 80,
+        "recommendation": "SELL"
+      }
+    },
+    "technicalScore": 65,
+    "timestamp": 1750593391525,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "AVAX_1750594946429",
+    "symbol": "AVAX",
+    "type": "HOLD",
+    "strength": "WEAK",
+    "confidence": 77,
+    "entryPrice": 36.416385546248506,
+    "currentPrice": 35.14960084404288,
+    "stopLoss": 35.32389397986105,
+    "takeProfit": 38.23720482356093,
+    "risk": "MEDIUM",
+    "timeHorizon": "MEDIUM",
+    "positionSize": 15,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 84,
+        "recommendation": "HOLD"
+      },
+      "claude": {
+        "confidence": 82,
+        "recommendation": "HOLD"
+      },
+      "gemini": {
+        "confidence": 63,
+        "recommendation": "SELL"
+      }
+    },
+    "technicalScore": 70,
+    "timestamp": 1750594946429,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "ADA_1750594946468",
+    "symbol": "ADA",
+    "type": "SHORT",
+    "strength": "WEAK",
+    "confidence": 77,
+    "entryPrice": 0.5018742831236452,
+    "currentPrice": 0.5013729102134319,
+    "stopLoss": 0.4868180546299359,
+    "takeProfit": 0.5269679972798276,
+    "risk": "HIGH",
+    "timeHorizon": "LONG",
+    "positionSize": 12,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 86,
+        "recommendation": "STRONG_BUY"
+      },
+      "claude": {
+        "confidence": 67,
+        "recommendation": "SELL"
+      },
+      "gemini": {
+        "confidence": 80,
+        "recommendation": "BUY"
+      }
+    },
+    "technicalScore": 70,
+    "timestamp": 1750594946468,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "UNI_1750594946509",
+    "symbol": "UNI",
+    "type": "LONG",
+    "strength": "MEDIUM",
+    "confidence": 71,
+    "entryPrice": 8.41029611542295,
+    "currentPrice": 7.889076042754029,
+    "stopLoss": 8.157987231960261,
+    "takeProfit": 8.830810921194098,
+    "risk": "MEDIUM",
+    "timeHorizon": "SHORT",
+    "positionSize": 15,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 78,
+        "recommendation": "BUY"
+      },
+      "claude": {
+        "confidence": 62,
+        "recommendation": "HOLD"
+      },
+      "gemini": {
+        "confidence": 63,
+        "recommendation": "BUY"
+      }
+    },
+    "technicalScore": 80,
+    "timestamp": 1750594946509,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "DOT_1750595186143",
+    "symbol": "DOT",
+    "type": "LONG",
+    "strength": "WEAK",
+    "confidence": 74,
+    "entryPrice": 6.9707404868145515,
+    "currentPrice": 6.963776710104447,
+    "stopLoss": 6.761618272210114,
+    "takeProfit": 7.3192775111552795,
+    "risk": "LOW",
+    "timeHorizon": "MEDIUM",
+    "positionSize": 18,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 86,
+        "recommendation": "STRONG_SELL"
+      },
+      "claude": {
+        "confidence": 75,
+        "recommendation": "STRONG_BUY"
+      },
+      "gemini": {
+        "confidence": 56,
+        "recommendation": "STRONG_BUY"
+      }
+    },
+    "technicalScore": 70,
+    "timestamp": 1750595186143,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "ATOM_1750595426110",
+    "symbol": "ATOM",
+    "type": "LONG",
+    "strength": "WEAK",
+    "confidence": 66,
+    "entryPrice": 115.52988439899431,
+    "currentPrice": 100.43650865680078,
+    "stopLoss": 112.06398786702448,
+    "takeProfit": 121.30637861894404,
+    "risk": "LOW",
+    "timeHorizon": "MEDIUM",
+    "positionSize": 18,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 57,
+        "recommendation": "STRONG_BUY"
+      },
+      "claude": {
+        "confidence": 59,
+        "recommendation": "STRONG_BUY"
+      },
+      "gemini": {
+        "confidence": 87,
+        "recommendation": "STRONG_SELL"
+      }
+    },
+    "technicalScore": 70,
+    "timestamp": 1750595426110,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "SOL_1750595906457",
+    "symbol": "SOL",
+    "type": "SHORT",
+    "strength": "MEDIUM",
+    "confidence": 79,
+    "entryPrice": 141.4327760922786,
+    "currentPrice": 132.623,
+    "stopLoss": 137.18979280951024,
+    "takeProfit": 148.50441489689254,
+    "risk": "MEDIUM",
+    "timeHorizon": "MEDIUM",
+    "positionSize": 15,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 72,
+        "recommendation": "STRONG_SELL"
+      },
+      "claude": {
+        "confidence": 81,
+        "recommendation": "STRONG_SELL"
+      },
+      "gemini": {
+        "confidence": 86,
+        "recommendation": "SELL"
+      }
+    },
+    "technicalScore": 80,
+    "timestamp": 1750595906457,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "ADA_1750595906562",
+    "symbol": "ADA",
+    "type": "SHORT",
+    "strength": "WEAK",
+    "confidence": 75,
+    "entryPrice": 0.54158787,
+    "currentPrice": 0.54213,
+    "stopLoss": 0.5578355061,
+    "takeProfit": 0.5145084765,
+    "risk": "LOW",
+    "timeHorizon": "SHORT",
+    "positionSize": 18,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 82,
+        "recommendation": "BUY"
+      },
+      "claude": {
+        "confidence": 63,
+        "recommendation": "SELL"
+      },
+      "gemini": {
+        "confidence": 86,
+        "recommendation": "STRONG_SELL"
+      }
+    },
+    "technicalScore": 70,
+    "timestamp": 1750595906562,
+    "status": "GENERATED",
+    "outcome": null
+  },
+  {
+    "id": "FTM_1750596388568",
+    "symbol": "FTM",
+    "type": "HOLD",
+    "strength": "WEAK",
+    "confidence": 66,
+    "entryPrice": 101.28184635074038,
+    "currentPrice": 101.18066568505533,
+    "stopLoss": 98.24339096021816,
+    "takeProfit": 106.3459386682774,
+    "risk": "MEDIUM",
+    "timeHorizon": "MEDIUM",
+    "positionSize": 15,
+    "marketRegime": "BULL",
+    "sentiment": "NEUTRAL",
+    "fearGreed": 42,
+    "aiSources": {
+      "gpt": {
+        "confidence": 55,
+        "recommendation": "BUY"
+      },
+      "claude": {
+        "confidence": 78,
+        "recommendation": "STRONG_BUY"
+      },
+      "gemini": {
+        "confidence": 68,
+        "recommendation": "HOLD"
+      }
+    },
+    "technicalScore": 65,
+    "timestamp": 1750596388568,
+    "status": "GENERATED",
+    "outcome": null
+  }
+]
