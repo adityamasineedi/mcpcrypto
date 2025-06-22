@@ -258,6 +258,9 @@ class ProTradeAI {
           // Log signal generation
           await this.modules.accuracyLogger.logSignal(signal);
 
+          // Send signal notification to Telegram FIRST
+          await this.modules.telegramBot.sendSignal(signal);
+
           // Request approval (handles auto-approval if configured)
           const approval = await this.modules.signalApprovalBot.requestApproval(signal);
 
