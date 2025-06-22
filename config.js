@@ -125,7 +125,7 @@ const config = {
 
   // 🪙 COIN SELECTION
   coins: {
-    whitelist: (process.env.COIN_WHITELIST || 'BTC,ETH,SOL,LINK,OP,ADA,DOT,AVAX,MATIC,UNI').split(','),
+    whitelist: (process.env.COIN_WHITELIST || 'BTC,ETH,SOL,LINK,OP,ADA,DOT,AVAX,UNI').split(','),
     blacklist: (process.env.COIN_BLACKLIST || '').split(',').filter(Boolean),
     maxCoins: parseInt(process.env.MAX_COINS) || 10,
     minVolume: parseFloat(process.env.MIN_VOLUME) || 1000000, // $1M daily volume

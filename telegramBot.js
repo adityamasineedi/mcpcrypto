@@ -123,11 +123,18 @@ class TelegramBot {
    * 📨 Send trading signal
    */
   async sendSignal(signal) {
-    if (!this.initialized || !config.telegram.notifications.signals) return;
+    logger.debug(`🔍 sendSignal called for ${signal.symbol}, initialized: ${this.initialized}, notifications.signals: ${config.telegram.notifications.signals}`);
+    
+    if (!this.initialized || !config.telegram.notifications.signals) {
+      logger.debug(`⚠️ Skipping signal send - initialized: ${this.initialized}, notifications: ${config.telegram.notifications.signals}`);
+      return;
+    }
 
     try {
       const message = this.formatSignalMessage(signal);
       const keyboard = this.createSignalKeyboard(signal);
+      
+      logger.debug(`📨 Sending signal message for ${signal.symbol}...`);
       
       await this.sendMessage(message, { 
         parse_mode: 'HTML',
@@ -337,7 +344,15 @@ class TelegramBot {
    * 📨 Generic send message with rate limiting
    */
   async sendMessage(text, options = {}) {
-    if (!this.bot || !config.telegram.chatId) return;
+    if (!this.bot) {
+      logger.debug('⚠️ No bot instance available');
+      return;
+    }
+    
+    if (!config.telegram.chatId) {
+      logger.debug('⚠️ No chat ID configured');
+      return;
+    }
 
     try {
       // Rate limiting
@@ -346,8 +361,12 @@ class TelegramBot {
         await new Promise(resolve => setTimeout(resolve, this.minMessageInterval));
       }
       
+      logger.debug(`📨 Sending to chat ${config.telegram.chatId}: ${text.substring(0, 50)}...`);
+      
       await this.bot.telegram.sendMessage(config.telegram.chatId, text, options);
       this.lastMessageTime = Date.now();
+      
+      logger.debug('✅ Message sent successfully');
       
     } catch (error) {
       if (error.code === 429) {
@@ -357,6 +376,7 @@ class TelegramBot {
         await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
         await this.sendMessage(text, options);
       } else {
+        logger.error('❌ Error sending message:', error.message);
         throw error;
       }
     }
