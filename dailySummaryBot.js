@@ -612,14 +612,28 @@ class DailySummaryBot {
    * 🧹 Cleanup resources
    */
   cleanup() {
-    // Stop all cron jobs
-    this.cronJobs.forEach(({ name, job }) => {
-      job.destroy();
-      logger.debug(`⏰ Stopped cron job: ${name}`);
-    });
-    
-    this.cronJobs = [];
-    logger.info('🧹 Daily Summary Bot cleaned up');
+    try {
+      // Stop all cron jobs
+      this.cronJobs.forEach(({ name, job }) => {
+        try {
+          if (job && typeof job.destroy === 'function') {
+            job.destroy();
+            logger.debug(`⏰ Stopped cron job: ${name}`);
+          }
+        } catch (error) {
+          logger.warn(`⚠️ Error stopping cron job ${name}:`, error.message);
+        }
+      });
+      
+      this.cronJobs = [];
+      this.initialized = false;
+      logger.info('🧹 Daily Summary Bot cleaned up');
+    } catch (error) {
+      logger.error('❌ Error during Daily Summary Bot cleanup:', error.message);
+      // Still mark as cleaned up to prevent hanging
+      this.cronJobs = [];
+      this.initialized = false;
+    }
   }
 }
 

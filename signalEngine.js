@@ -921,6 +921,9 @@ class SignalEngine {
     const stopLoss = this.calculateStopLoss(technicalSignal.entryPrice, technicalSignal.type, aiAnalysis.stop_loss);
     const takeProfit = this.calculateTakeProfit(technicalSignal.entryPrice, technicalSignal.type, aiAnalysis.price_target);
     
+    // ✅ ENHANCED: Calculate expected hold duration and exit timing
+    const timing = this.calculatePositionTiming(technicalSignal, aiAnalysis, marketContext);
+    
     const signal = {
       id: `${symbol}_${Date.now()}`,
       symbol,
@@ -937,6 +940,15 @@ class SignalEngine {
       risk: aiAnalysis.risk_level,
       timeHorizon: aiAnalysis.time_horizon,
       marketRegime: marketContext.regime,
+      
+      // ✅ NEW: Enhanced timing information
+      timing: {
+        expectedHoldMinutes: timing.holdMinutes,
+        maxHoldMinutes: timing.maxHoldMinutes,
+        strategy: timing.strategy,
+        exitConditions: timing.exitConditions,
+        trailStopLevel: timing.trailStopLevel
+      },
       
       // Technical details
       technical: {
@@ -971,6 +983,68 @@ class SignalEngine {
     this.signalHistory.push(signal);
     
     return signal;
+  }
+
+  /**
+   * ✅ NEW: Calculate position timing and management
+   */
+  calculatePositionTiming(technicalSignal, aiAnalysis, marketContext) {
+    const timeHorizon = aiAnalysis.time_horizon || 'MEDIUM';
+    const strength = technicalSignal.strength;
+    const regime = marketContext.regime;
+    
+    // Base hold times in minutes
+    const baseTimes = {
+      SHORT: { WEAK: 20, MEDIUM: 45, STRONG: 90 },
+      MEDIUM: { WEAK: 180, MEDIUM: 360, STRONG: 720 },
+      LONG: { WEAK: 720, MEDIUM: 1440, STRONG: 2880 }
+    };
+    
+    let holdMinutes = baseTimes[timeHorizon]?.[strength] || 360;
+    let maxHoldMinutes = holdMinutes * 2;
+    
+    // Adjust for market regime
+    if (regime === 'SIDEWAYS') {
+      holdMinutes *= 0.7; // Shorter holds in sideways markets
+      maxHoldMinutes *= 0.8;
+    } else if (regime === 'BULL' && technicalSignal.type === 'LONG') {
+      holdMinutes *= 1.2; // Let winners run in bull markets
+      maxHoldMinutes *= 1.5;
+    } else if (regime === 'BEAR' && technicalSignal.type === 'SHORT') {
+      holdMinutes *= 1.1; // Slightly longer for bear market shorts
+    }
+    
+    // Strategy type
+    let strategy = 'Adaptive Trading';
+    if (regime === 'BULL' && timeHorizon === 'SHORT') strategy = 'Momentum Scalping';
+    else if (regime === 'BULL' && timeHorizon === 'MEDIUM') strategy = 'Trend Following';
+    else if (regime === 'BULL' && timeHorizon === 'LONG') strategy = 'Position Trading';
+    else if (regime === 'BEAR' && timeHorizon === 'SHORT') strategy = 'Bounce Trading';
+    else if (regime === 'BEAR') strategy = 'Reversal Strategy';
+    else if (regime === 'SIDEWAYS') strategy = 'Range Trading';
+    
+    // Exit conditions
+    const exitConditions = [];
+    if (timeHorizon === 'SHORT') {
+      exitConditions.push('Quick scalp - exit on target or 1-2 candle reversal');
+    }
+    if (regime === 'SIDEWAYS') {
+      exitConditions.push('Exit on range breakout or 2x time limit');
+    }
+    if (strength === 'STRONG') {
+      exitConditions.push('Trail stop-loss at 50% profit target');
+    }
+    
+    // Trail stop level (percentage of profit to lock in)
+    const trailStopLevel = strength === 'STRONG' ? 0.5 : 0.3;
+    
+    return {
+      holdMinutes: Math.round(holdMinutes),
+      maxHoldMinutes: Math.round(maxHoldMinutes),
+      strategy,
+      exitConditions,
+      trailStopLevel
+    };
   }
 
   /**

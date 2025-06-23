@@ -772,16 +772,31 @@ Return strategies with specific coins, entry conditions, and profit targets.`;
    * 🧹 Cleanup resources
    */
   cleanup() {
-    // Stop all cron jobs
-    this.cronJobs.forEach(({ name, job }) => {
-      job.destroy();
-      logger.debug(`⏰ Stopped cron job: ${name}`);
-    });
-    
-    this.cronJobs = [];
-    this.currentStrategies = [];
-    
-    logger.info('🧹 Strategy Regenerator cleaned up');
+    try {
+      // Stop all cron jobs
+      this.cronJobs.forEach(({ name, job }) => {
+        try {
+          if (job && typeof job.destroy === 'function') {
+            job.destroy();
+            logger.debug(`⏰ Stopped cron job: ${name}`);
+          }
+        } catch (error) {
+          logger.warn(`⚠️ Error stopping cron job ${name}:`, error.message);
+        }
+      });
+      
+      this.cronJobs = [];
+      this.currentStrategies = [];
+      this.initialized = false;
+      
+      logger.info('🧹 Strategy Regenerator cleaned up');
+    } catch (error) {
+      logger.error('❌ Error during Strategy Regenerator cleanup:', error.message);
+      // Still mark as cleaned up to prevent hanging
+      this.cronJobs = [];
+      this.currentStrategies = [];
+      this.initialized = false;
+    }
   }
 }
 

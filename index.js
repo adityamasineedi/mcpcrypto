@@ -494,15 +494,22 @@ class ProTradeAI {
       const cleanupPromises = Object.entries(this.modules).map(async ([name, module]) => {
         try {
           if (module && typeof module.cleanup === 'function') {
-            await module.cleanup();
-            logger.debug(`✅ ${name} cleaned up`);
+            logger.debug(`🧹 Cleaning up ${name}...`);
+            await Promise.race([
+              module.cleanup(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Cleanup timeout')), 5000))
+            ]);
+            logger.debug(`✅ ${name} cleaned up successfully`);
+          } else {
+            logger.debug(`⚠️ ${name} has no cleanup method or is not initialized`);
           }
         } catch (error) {
-          logger.error(`❌ Error cleaning up ${name}:`, error.message);
+          logger.error(`❌ Error cleaning up ${name}: ${error.message}`);
+          // Continue with other cleanups even if one fails
         }
       });
 
-      await Promise.all(cleanupPromises);
+      await Promise.allSettled(cleanupPromises);
 
       // Send shutdown notification
       if (this.modules.telegramBot && this.initialized) {

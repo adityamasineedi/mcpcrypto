@@ -163,7 +163,11 @@ class TelegramBot {
     message += `• Confidence: <b>${confidence}%</b>\n`;
     message += `• Strength: <b>${signal.strength}</b>\n`;
     message += `• Risk Level: ${risk} <b>${signal.risk}</b>\n`;
-    message += `• Time Horizon: <b>${signal.timeHorizon}</b>\n\n`;
+    
+    // ✅ ENHANCED: Specific hold duration
+    const holdDuration = this.getHoldDuration(signal.timeHorizon, signal.strength, signal.context.regime);
+    message += `• Hold Duration: <b>${holdDuration}</b>\n`;
+    message += `• Strategy: <b>${this.getStrategyType(signal.context.regime, signal.timeHorizon)}</b>\n\n`;
     
     // Prices
     message += `💰 <b>Price Levels:</b>\n`;
@@ -186,6 +190,14 @@ class TelegramBot {
       message += `• Risk/Reward: <b>1:${signal.riskReward.toFixed(1)}</b>\n`;
     }
     message += '\n';
+
+    // ✅ NEW: Position Management
+    message += `⏰ <b>Position Management:</b>\n`;
+    const exitConditions = this.getExitConditions(signal);
+    exitConditions.forEach(condition => {
+      message += `• ${condition}\n`;
+    });
+    message += '\n';
     
     // Market context
     message += `🌍 <b>Market Context:</b>\n`;
@@ -193,10 +205,13 @@ class TelegramBot {
     message += `• Sentiment: <b>${signal.context.sentiment}</b>\n`;
     message += `• Fear/Greed: <b>${signal.context.fearGreed}</b>\n\n`;
     
-    // AI Analysis
+    // AI Analysis with all 3 models
     message += `🤖 <b>AI Analysis:</b>\n`;
     message += `• GPT-4: <b>${signal.ai.sources.gpt.confidence}%</b> (${signal.ai.sources.gpt.recommendation})\n`;
     message += `• Claude: <b>${signal.ai.sources.claude.confidence}%</b> (${signal.ai.sources.claude.recommendation})\n`;
+    if (signal.ai.sources.gemini) {
+      message += `• Gemini: <b>${signal.ai.sources.gemini.confidence}%</b> (${signal.ai.sources.gemini.recommendation})\n`;
+    }
     message += `• Reasoning: <i>${signal.ai.reasoning}</i>\n\n`;
     
     // Technical analysis
@@ -207,6 +222,82 @@ class TelegramBot {
     message += `⏰ <i>${new Date(signal.timestamp).toLocaleString()}</i>`;
     
     return message;
+  }
+
+  /**
+   * ✅ NEW: Get specific hold duration
+   */
+  getHoldDuration(timeHorizon, strength, regime) {
+    const durations = {
+      SHORT: {
+        WEAK: '15-30 min',
+        MEDIUM: '30-60 min', 
+        STRONG: '1-2 hours'
+      },
+      MEDIUM: {
+        WEAK: '2-4 hours',
+        MEDIUM: '4-8 hours',
+        STRONG: '8-12 hours'
+      },
+      LONG: {
+        WEAK: '12-24 hours',
+        MEDIUM: '1-2 days',
+        STRONG: '2-3 days'
+      }
+    };
+
+    // Adjust for market regime
+    let baseDuration = durations[timeHorizon]?.[strength] || '1-2 hours';
+    
+    if (regime === 'SIDEWAYS') {
+      baseDuration = baseDuration.replace(/hours/g, 'hours (shorter in sideways market)');
+    }
+    
+    return baseDuration;
+  }
+
+  /**
+   * ✅ NEW: Get strategy type
+   */
+  getStrategyType(regime, timeHorizon) {
+    if (regime === 'BULL' && timeHorizon === 'SHORT') return 'Momentum Scalping';
+    if (regime === 'BULL' && timeHorizon === 'MEDIUM') return 'Trend Following';
+    if (regime === 'BULL' && timeHorizon === 'LONG') return 'Position Trading';
+    if (regime === 'BEAR' && timeHorizon === 'SHORT') return 'Bounce Trading';
+    if (regime === 'BEAR') return 'Reversal Strategy';
+    if (regime === 'SIDEWAYS') return 'Range Trading';
+    return 'Adaptive Strategy';
+  }
+
+  /**
+   * ✅ NEW: Get exit conditions
+   */
+  getExitConditions(signal) {
+    const conditions = [];
+    
+    // Time-based exits
+    const holdDuration = this.getHoldDuration(signal.timeHorizon, signal.strength, signal.context.regime);
+    conditions.push(`⏱️ Close after: <b>${holdDuration}</b>`);
+    
+    // Price-based exits
+    conditions.push(`🎯 Take Profit: <b>$${signal.takeProfit?.toFixed(4) || 'Manual'}</b>`);
+    conditions.push(`🛑 Stop Loss: <b>$${signal.stopLoss.toFixed(4)}</b>`);
+    
+    // Condition-based exits
+    if (signal.context.regime === 'SIDEWAYS') {
+      conditions.push(`📊 Exit if: Range breakout confirmed`);
+    } else if (signal.context.regime === 'BULL') {
+      conditions.push(`📈 Trail stop: Move SL to breakeven at +50%`);
+    } else if (signal.context.regime === 'BEAR') {
+      conditions.push(`📉 Quick exit: Close on volume spike reversal`);
+    }
+    
+    // Technical exit signals
+    if (signal.strength === 'STRONG') {
+      conditions.push(`🔄 Monitor: RSI divergence for early exit`);
+    }
+    
+    return conditions;
   }
 
   /**
