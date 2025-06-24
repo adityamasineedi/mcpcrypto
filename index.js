@@ -31,6 +31,7 @@ const AccuracyLogger = require('./accuracyLogger');
 const SignalAPI = require('./signalAPI');
 const DailySummaryBot = require('./dailySummaryBot');
 const StrategyRegenerator = require('./strategyRegenerator');
+const DashboardServer = require('./dashboard-server');
 
 class ProTradeAI {
   constructor() {
@@ -69,6 +70,9 @@ class ProTradeAI {
 
       // Start periodic cleanup
       this.startPeriodicCleanup(); // ✅ Start the periodic cleanup
+
+      // Initialize and connect dashboard
+      this.connectDashboard();
 
       this.initialized = true;
       this.running = true;
@@ -534,6 +538,29 @@ class ProTradeAI {
       if (exit) {
         process.exit(1);
       }
+    }
+  }
+
+  /**
+   * 🌐 Connect dashboard to live bot
+   */
+  connectDashboard() {
+    try {
+      // Connect the dashboard server to this bot instance
+      if (DashboardServer && typeof DashboardServer.connectLiveBot === 'function') {
+        DashboardServer.connectLiveBot(this);
+        logger.info('✅ Dashboard connected to live bot data');
+        
+        // Start the dashboard server if it has a start function
+        if (typeof DashboardServer.startDashboardServer === 'function') {
+          DashboardServer.startDashboardServer();
+          logger.info('🌐 Dashboard server started on port 3000');
+        }
+      } else {
+        logger.warn('⚠️ Dashboard server not available for live connection');
+      }
+    } catch (error) {
+      logger.warn('⚠️ Failed to connect dashboard:', error.message);
     }
   }
 }

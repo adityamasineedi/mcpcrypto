@@ -2,7 +2,7 @@
   "daily": {
     "2025-06-22": {
       "date": "2025-06-22",
-      "signalsGenerated": 11,
+      "signalsGenerated": 4,
       "signalsExecuted": 0,
       "trades": 0,
       "wins": 0,
@@ -10,7 +10,39 @@
       "profit": 0,
       "fees": 0,
       "winRate": 0,
-      "avgConfidence": 69.18181818181819,
+      "avgConfidence": 78.5,
+      "avgHoldTime": 0,
+      "bestTrade": 0,
+      "worstTrade": 0,
+      "coins": {}
+    },
+    "2025-06-23": {
+      "date": "2025-06-23",
+      "signalsGenerated": 31,
+      "signalsExecuted": 0,
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "profit": 0,
+      "fees": 0,
+      "winRate": 0,
+      "avgConfidence": 74.48387096774191,
+      "avgHoldTime": 0,
+      "bestTrade": 0,
+      "worstTrade": 0,
+      "coins": {}
+    },
+    "2025-06-24": {
+      "date": "2025-06-24",
+      "signalsGenerated": 23,
+      "signalsExecuted": 0,
+      "trades": 0,
+      "wins": 0,
+      "losses": 0,
+      "profit": 0,
+      "fees": 0,
+      "winRate": 0,
+      "avgConfidence": 77.43478260869566,
       "avgHoldTime": 0,
       "bestTrade": 0,
       "worstTrade": 0,
@@ -18,5 +50,5 @@
     }
   },
   "monthly": {},
-  "lastUpdate": 1750596388591
+  "lastUpdate": 1750753849256
 }

@@ -233,7 +233,7 @@ Response format must be valid JSON with these exact fields:
   }
 
   /**
-   * 💎 Get Gemini 2.0 Flash analysis
+   * 💎 Get Gemini 2.0 Flash analysis (with enhanced error handling)
    */
   async getGeminiAnalysis(symbol, technicalData, marketContext, proposedSignal) {
     try {
@@ -247,32 +247,63 @@ Response format must be valid JSON with these exact fields:
 
       const prompt = this.buildGeminiPrompt(symbol, technicalData, marketContext, proposedSignal);
 
-      const model = this.gemini.getGenerativeModel({ 
-        model: config.ai.gemini.model || 'gemini-2.0-flash-exp',
-        generationConfig: {
-          temperature: 0.3,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1000,
-        }
-      });
+      // Add timeout and retry logic
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      try {
+        const model = this.gemini.getGenerativeModel({ 
+          model: config.ai.gemini.model || 'gemini-1.5-flash', // Use stable model
+          generationConfig: {
+            temperature: 0.3,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 800, // Reduced for faster response
+          }
+        });
 
-      const analysis = this.parseAIResponse(text, 'Gemini-2.0');
-      this.requestCache.set(cacheKey, analysis);
+        const result = await model.generateContent(prompt);
+        clearTimeout(timeoutId);
+        
+        const response = await result.response;
+        const text = response.text();
 
-      return analysis;
+        const analysis = this.parseAIResponse(text, 'Gemini-2.0');
+        this.requestCache.set(cacheKey, analysis);
+
+        return analysis;
+      } catch (timeoutError) {
+        clearTimeout(timeoutId);
+        throw timeoutError;
+      }
+
     } catch (error) {
-      logger.error('❌ Gemini analysis error:', error.message);
+      // Enhanced error logging
+      const errorInfo = {
+        message: error.message,
+        status: error.status,
+        code: error.code,
+        symbol: symbol,
+        timestamp: new Date().toISOString()
+      };
       
-      // If it's an auth error, disable Gemini for this session
+      // Don't log full error details to reduce noise
+      if (error.status === 429) {
+        logger.warn(`⚠️ Gemini rate limit hit for ${symbol}, using fallback`);
+      } else if (error.status === 503 || error.status === 500) {
+        logger.warn(`⚠️ Gemini service unavailable for ${symbol}, using fallback`);
+      } else if (error.message.includes('timeout') || error.message.includes('aborted')) {
+        logger.warn(`⚠️ Gemini timeout for ${symbol}, using fallback`);
+      } else {
+        logger.error('❌ Gemini analysis error:', errorInfo);
+      }
+      
+      // Disable Gemini temporarily on certain errors
       if (error.status === 403 || error.status === 401 || error.status === 400) {
         logger.warn('⚠️ Gemini API credentials invalid, disabling for session');
         this.gemini = null;
       }
+      
       return this.getMockAnalysis('Gemini-2.0');
     }
   }
