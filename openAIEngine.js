@@ -12,6 +12,16 @@ class OpenAIEngine {
     this.initialized = false;
     this.requestCache = new Map();
     this.cacheTimeout = 300000; // 5 minutes
+    this.intelligentCache = new Map();
+    this.cacheHits = 0;
+    this.totalRequests = 0;
+    // Cache configuration from config
+    this.cacheConfig = config.ai.cache || {
+      enabled: true,
+      timeout: 1800000,
+      maxSize: 1000,
+      tolerance: { price: 500, volume: 20000, rsi: 10, macd: 0.1 }
+    };
   }
 
   /**
@@ -60,7 +70,19 @@ class OpenAIEngine {
    */
   async analyzeSignal(signalData) {
     try {
+      this.totalRequests++;
+      
       const { symbol, technicalData, marketContext, proposedSignal } = signalData;
+
+      // Generate cache key for intelligent caching
+      const cacheKey = this.generateCacheKey(symbol, marketContext, technicalData, proposedSignal);
+      
+      // Check intelligent cache first
+      const cachedResponse = this.getCachedResponse(cacheKey);
+      if (cachedResponse) {
+        logger.info(`🎯 Using cached AI analysis for ${symbol}`);
+        return cachedResponse;
+      }
 
       // Validate technical data before proceeding
       const validatedTechnicalData = this.validateTechnicalData(technicalData);
@@ -80,12 +102,16 @@ class OpenAIEngine {
       // Calculate consensus
       const consensus = this.calculateAIConsensus(gptResult, claudeResult, geminiResult, validatedTechnicalData);
 
+      // Store in intelligent cache
+      this.setCachedResponse(cacheKey, consensus);
+
       logger.info(`🤖 AI Analysis for ${symbol}:`, {
         gptConfidence: gptResult.confidence,
         claudeConfidence: claudeResult.confidence,
         geminiConfidence: geminiResult.confidence,
         finalConfidence: consensus.confidence,
-        recommendation: consensus.recommendation
+        recommendation: consensus.recommendation,
+        cached: false
       });
 
       return consensus;
@@ -697,6 +723,129 @@ Leverage your real-time processing power for optimal market timing.`;
   }
 
   /**
+   * 🔑 Generate cache key for similar market conditions
+   */
+  generateCacheKey(symbol, marketConditions, technicalData, signalData) {
+    const marketHash = this.hashMarketConditions(marketConditions);
+    const technicalHash = this.hashTechnicalData(technicalData);
+    const signalHash = this.hashSignalData(signalData);
+    
+    return `${symbol}_${marketHash}_${technicalHash}_${signalHash}`;
+  }
+
+  /**
+   * 🧮 Hash market conditions for similarity matching
+   */
+  hashMarketConditions(conditions) {
+    if (!conditions) return 'default';
+    
+    // Use configurable tolerances
+    const tolerance = this.cacheConfig.tolerance;
+    const price = Math.round((conditions.price || 0) / tolerance.price) * tolerance.price;
+    const volume = Math.round((conditions.volume || 0) / tolerance.volume) * tolerance.volume;
+    const change = Math.round((conditions.change || 0) * 2) / 2; // Round to nearest 0.5%
+    
+    return `p${price}_v${volume}_c${change}`;
+  }
+
+  /**
+   * 📊 Hash technical data for similarity matching
+   */
+  hashTechnicalData(technical) {
+    if (!technical) return 'default';
+    
+    // Use configurable tolerances
+    const tolerance = this.cacheConfig.tolerance;
+    const rsi = Math.round((technical.rsi || 50) / tolerance.rsi) * tolerance.rsi;
+    const macd = technical.macd && typeof technical.macd.MACD === 'number' ? 
+      Math.round(technical.macd.MACD / tolerance.macd) * tolerance.macd : 0;
+    const bb = technical.bollingerBands ? 
+      Math.round(technical.bollingerBands.position * 5) / 5 : 0; // Round to 0.2
+    
+    return `rsi${rsi}_macd${macd}_bb${bb}`;
+  }
+
+  /**
+   * 📈 Hash signal data for similarity matching
+   */
+  hashSignalData(signal) {
+    if (!signal) return 'default';
+    
+    const type = signal.type || 'unknown';
+    const strength = Math.round((signal.strength || 0) * 10) / 10;
+    const direction = signal.direction || 'neutral';
+    
+    return `${type}_${strength}_${direction}`;
+  }
+
+  /**
+   * 💾 Get cached response if similar conditions exist
+   */
+  getCachedResponse(cacheKey) {
+    if (!this.cacheConfig.enabled) return null;
+    
+    const cached = this.intelligentCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.cacheConfig.timeout) {
+      this.cacheHits++;
+      logger.info(`🎯 Cache hit for key: ${cacheKey.substring(0, 20)}...`);
+      return cached.response;
+    }
+    return null;
+  }
+
+  /**
+   * 💾 Store response in intelligent cache
+   */
+  setCachedResponse(cacheKey, response) {
+    if (!this.cacheConfig.enabled) return;
+    
+    this.intelligentCache.set(cacheKey, {
+      response: response,
+      timestamp: Date.now()
+    });
+    
+    // Clean old entries if cache gets too large
+    if (this.intelligentCache.size > this.cacheConfig.maxSize) {
+      this.cleanCache();
+    }
+  }
+
+  /**
+   * 📊 Get cache statistics
+   */
+  getCacheStats() {
+    const hitRate = this.totalRequests > 0 ? 
+      ((this.cacheHits / this.totalRequests) * 100).toFixed(2) : '0.00';
+    
+    return {
+      cacheSize: this.intelligentCache.size,
+      cacheHits: this.cacheHits,
+      totalRequests: this.totalRequests,
+      hitRate: `${hitRate}%`,
+      estimatedSavings: `$${(this.cacheHits * 0.002).toFixed(3)}` // Approx $0.002 per call
+    };
+  }
+
+  /**
+   * 🧹 Clean expired cache entries
+   */
+  cleanCache() {
+    const now = Date.now();
+    let cleaned = 0;
+    
+    for (const [key, value] of this.intelligentCache.entries()) {
+      if (now - value.timestamp > this.cacheConfig.timeout) {
+        this.intelligentCache.delete(key);
+        cleaned++;
+      }
+    }
+    
+    if (cleaned > 0) {
+      logger.info(`🧹 Cleaned ${cleaned} expired cache entries`);
+    }
+  }
+
+  /**
    * 🎲 Get mock analysis for testing
    */
   getMockAnalysis(source = 'MOCK') {
@@ -721,7 +870,10 @@ Leverage your real-time processing power for optimal market timing.`;
    */
   cleanup() {
     this.requestCache.clear();
-    logger.info('🧹 OpenAI Engine with latest models cleaned up');
+    this.intelligentCache.clear();
+    this.cacheHits = 0;
+    this.totalRequests = 0;
+    logger.info('🧹 OpenAI Engine with intelligent caching cleaned up');
   }
 }
 

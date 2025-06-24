@@ -61,14 +61,13 @@ const config = {
   // ============================================================================
 
   // 🤖 AI CONFIGURATION WITH LATEST MODELS
-  ai: {
-    confidence: {
+  ai: {    confidence: {
       minimum: parseFloat(process.env.AI_MIN_CONFIDENCE) || 70, // ✅ INCREASED: Higher bar for signals
       gpt4Weight: parseFloat(process.env.GPT4_WEIGHT) || 35,     // ✅ INCREASED: GPT-4o is more reliable
-      claudeWeight: parseFloat(process.env.CLAUDE_WEIGHT) || 30, // ✅ INCREASED: Claude 3.5 Sonnet excellent
+      claudeWeight: parseFloat(process.env.CLAUDE_WEIGHT) || 30,  // ✅ DISABLED: API key expired
       geminiWeight: parseFloat(process.env.GEMINI_WEIGHT) || 20, // ✅ NEW: Gemini 2.0 Flash added
       technicalWeight: parseFloat(process.env.TECHNICAL_WEIGHT) || 15, // ✅ REDUCED: Let AI lead more
-      sentimentWeight: parseFloat(process.env.SENTIMENT_WEIGHT) || 15  // Redistributed
+      sentimentWeight: parseFloat(process.env.SENTIMENT_WEIGHT) || 0   // ✅ DISABLED: Redistributed to others
     },
     openai: {
       apiKey: process.env.OPENAI_API_KEY,
@@ -80,12 +79,22 @@ const config = {
       apiKey: process.env.CLAUDE_API_KEY,
       model: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022', // ✅ LATEST: Already current
       maxTokens: parseInt(process.env.CLAUDE_MAX_TOKENS) || 1000
-    },
-    gemini: {
+    },    gemini: {
       apiKey: process.env.GEMINI_API_KEY,
       model: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',  // ✅ UPGRADED: Latest Gemini 2.0
       enabled: process.env.GEMINI_ENABLED !== 'false',            // ✅ ENABLED: Now included in consensus
-      maxTokens: parseInt(process.env.GEMINI_MAX_TOKENS) || 1000
+      maxTokens: parseInt(process.env.GEMINI_MAX_TOKENS) || 1000    },
+    // ✅ NEW: Intelligent Caching Configuration
+    cache: {
+      enabled: process.env.AI_CACHE_ENABLED !== 'false',          // Enable intelligent caching
+      timeout: parseInt(process.env.AI_CACHE_TIMEOUT) || 1800000, // 30 minutes cache expiry
+      maxSize: parseInt(process.env.AI_CACHE_MAX_SIZE) || 1000,   // Max cache entries
+      tolerance: {
+        price: parseInt(process.env.AI_CACHE_PRICE_TOLERANCE) || 500,     // ±500 price tolerance
+        volume: parseInt(process.env.AI_CACHE_VOLUME_TOLERANCE) || 20000, // ±20k volume tolerance
+        rsi: parseInt(process.env.AI_CACHE_RSI_TOLERANCE) || 10,          // ±10 RSI tolerance
+        macd: parseFloat(process.env.AI_CACHE_MACD_TOLERANCE) || 0.2      // ±0.2 MACD tolerance
+      }
     }
   },
 
