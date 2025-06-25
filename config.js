@@ -16,7 +16,40 @@ const config = {
     maxTradeAmount: parseFloat(process.env.MAX_TRADE_AMOUNT) || 50, // $50 maximum per trade
     leverageMultiplier: parseFloat(process.env.LEVERAGE) || 2, // 2x leverage
     stopLossPercent: parseFloat(process.env.STOP_LOSS_PERCENT) || 3, // 3% stop loss
-    takeProfitPercent: parseFloat(process.env.TAKE_PROFIT_PERCENT) || 5 // 5% take profit
+    takeProfitPercent: parseFloat(process.env.TAKE_PROFIT_PERCENT) || 5 // 5% take profit (legacy)
+  },
+
+  // 🎯 MULTIPLE TAKE PROFIT CONFIGURATION
+  trading: {
+    // Take Profit Levels
+    takeProfit1Percent: parseFloat(process.env.TAKE_PROFIT_1_PERCENT) || 2.5, // TP1: 2.5%
+    takeProfit2Percent: parseFloat(process.env.TAKE_PROFIT_2_PERCENT) || 4.5, // TP2: 4.5%
+    takeProfit3Percent: parseFloat(process.env.TAKE_PROFIT_3_PERCENT) || 7.0, // TP3: 7.0%
+    
+    // Position Allocation for each TP
+    tp1PositionPercent: parseFloat(process.env.TP1_POSITION_PERCENT) || 40, // 40% at TP1
+    tp2PositionPercent: parseFloat(process.env.TP2_POSITION_PERCENT) || 35, // 35% at TP2
+    tp3PositionPercent: parseFloat(process.env.TP3_POSITION_PERCENT) || 25, // 25% at TP3
+      // Trailing Stop Configuration
+    enableTrailingStop: process.env.ENABLE_TRAILING_STOP !== 'false',
+    trailingStopPercent: parseFloat(process.env.TRAILING_STOP_PERCENT) || 1.5, // 1.5% trailing
+    
+    // Advanced Features
+    partialCloseEnabled: true,
+    riskToRewardRatio: 2.0, // Minimum 1:2 risk/reward
+    maxSlippage: 0.5, // 0.5% max slippage
+    
+    // 🚀 DYNAMIC TAKE PROFIT CONFIGURATION
+    dynamicTPEnabled: process.env.DYNAMIC_TP_ENABLED !== 'false', // Enable by default
+    dynamicTPMethods: {
+      volatility: { enabled: true, weight: 0.20 }, // Enabled for testing
+      atr: { enabled: true, weight: 0.20 }, // Enabled for testing  
+      supportResistance: { enabled: false, weight: 0.0 }, // Disabled temporarily
+      fibonacci: { enabled: true, weight: 0.30 }, // Primary method
+      marketRegime: { enabled: true, weight: 0.30 } // Secondary method
+    },
+    dynamicTPMinConfidence: 60, // Minimum confidence to use dynamic TPs
+    dynamicTPFallbackToStatic: true // Fallback to static if dynamic fails
   },
 
   // ⏱️ TIMEFRAMES & INTERVALS

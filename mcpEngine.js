@@ -565,6 +565,42 @@ class MCPEngine {
     this.marketFetcher.cleanup();
     logger.info('🧹 MCP Engine cleaned up');
   }
+
+  /**
+   * 📊 Detect Market Regime (Public Interface)
+   */
+  async detectMarketRegime() {
+    try {
+      // Ensure market context is up to date
+      await this.updateMarketContextIfNeeded();
+      
+      // Return current regime with detailed analysis
+      return {
+        regime: this.marketContext.regime,
+        confidence: this.marketContext.confidence,
+        sentiment: this.marketContext.sentiment,
+        fearGreed: this.marketContext.fearGreedIndex,
+        volatility: this.marketContext.volatility,
+        trends: this.marketContext.trends || {
+          short: 'NEUTRAL',
+          medium: 'NEUTRAL', 
+          long: 'NEUTRAL'
+        },
+        timestamp: this.marketContext.lastUpdate
+      };
+    } catch (error) {
+      logger.error('❌ Failed to detect market regime:', error.message);
+      return {
+        regime: 'SIDEWAYS',
+        confidence: 30,
+        sentiment: 'NEUTRAL',
+        fearGreed: 50,
+        volatility: 'MEDIUM',
+        trends: { short: 'NEUTRAL', medium: 'NEUTRAL', long: 'NEUTRAL' },
+        timestamp: Date.now()
+      };
+    }
+  }
 }
 
 module.exports = MCPEngine;
