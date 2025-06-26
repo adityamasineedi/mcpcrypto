@@ -66,6 +66,8 @@ class TelegramBot {
         '/status - Bot status\n' +
         '/stats - Trading statistics\n' +
         '/settings - Bot settings\n' +
+        '/tpmode - TP calculation mode\n' +
+        '/tpcalc - TP calculation details\n' +
         '/help - Show help'
       );
     });
@@ -108,7 +110,54 @@ class TelegramBot {
         '/status - Current bot status\n' +
         '/stats - Trading performance\n' +
         '/settings - Configuration info\n' +
+        '/tpmode - TP calculation mode\n' +
+        '/tpcalc - TP calculation details\n' +
         '/help - This help message',
+        { parse_mode: 'HTML' }
+      );
+    });
+
+    // 🚀 NEW: TP Mode command
+    this.bot.command('tpmode', (ctx) => {
+      const isDynamicMode = process.env.DYNAMIC_TP_ENABLED !== 'false';
+      const modeText = isDynamicMode ? 'Dynamic (Adaptive)' : 'Static (Percentage)';
+      
+      ctx.reply(
+        `🎯 <b>Take Profit Mode Status</b>\n\n` +
+        `Current Mode: <b>${modeText}</b>\n\n` +
+        `📊 <b>Dynamic Mode Features:</b>\n` +
+        `• Volatility-based calculations\n` +
+        `• Support/Resistance levels\n` +
+        `• ATR-based adjustments\n` +
+        `• Market regime adaptation\n` +
+        `• Fibonacci retracements\n\n` +
+        `📈 <b>Static Mode Features:</b>\n` +
+        `• Fixed percentage targets\n` +
+        `• Predictable levels\n` +
+        `• Simple calculations\n\n` +
+        `Use /tpcalc to see calculation details`,
+        { parse_mode: 'HTML' }
+      );
+    });
+
+    // 🚀 NEW: TP Calculation Details command
+    this.bot.command('tpcalc', (ctx) => {
+      ctx.reply(
+        `🔬 <b>TP Calculation Methods</b>\n\n` +
+        `🎯 <b>Dynamic Calculations:</b>\n` +
+        `• <b>Volatility:</b> Adjusts based on price movement\n` +
+        `• <b>ATR:</b> Uses Average True Range\n` +
+        `• <b>Support/Resistance:</b> Key price levels\n` +
+        `• <b>Fibonacci:</b> Golden ratio retracements\n` +
+        `• <b>Market Regime:</b> Bull/Bear/Sideways adaptation\n\n` +
+        `📊 <b>Weighting System:</b>\n` +
+        `• Each method gets a confidence score\n` +
+        `• Higher confidence = more influence\n` +
+        `• Final TP = weighted average of all methods\n\n` +
+        `🎪 <b>Static Fallback:</b>\n` +
+        `• TP1: ${config.trading.takeProfit1Percent}%\n` +
+        `• TP2: ${config.trading.takeProfit2Percent}%\n` +
+        `• TP3: ${config.trading.takeProfit3Percent}%`,
         { parse_mode: 'HTML' }
       );
     });
@@ -169,13 +218,64 @@ class TelegramBot {
     message += `• Hold Duration: <b>${holdDuration}</b>\n`;
     message += `• Strategy: <b>${this.getStrategyType(signal.context.regime, signal.timeHorizon)}</b>\n\n`;
     
-    // Prices
+    // Prices with Multiple Take Profit Levels
     message += `💰 <b>Price Levels:</b>\n`;
     message += `• Current: <b>$${signal.currentPrice.toFixed(4)}</b>\n`;
     message += `• Entry: <b>$${signal.entryPrice.toFixed(4)}</b>\n`;
-    message += `• Stop Loss: <b>$${signal.stopLoss.toFixed(4)}</b>\n`;
+    message += `• Stop Loss: <b>$${signal.stopLoss.toFixed(4)}</b>\n\n`;
+    
+    // ✅ NEW: Enhanced Multiple Take Profit Levels
+    message += `🎯 <b>Take Profit Strategy:</b>\n`;
+    const config = require('./config');
+    const entryPrice = signal.entryPrice || signal.currentPrice;
+    
+    // 🚀 Use dynamic TPs if available, otherwise fallback to static
+    let tp1Price, tp2Price, tp3Price, tpMethod, tpConfidence;
+    
+    if (signal.dynamicTPs) {
+      // Use dynamic TP calculation
+      tp1Price = signal.dynamicTPs.tp1.price;
+      tp2Price = signal.dynamicTPs.tp2.price;
+      tp3Price = signal.dynamicTPs.tp3.price;
+      tpMethod = signal.dynamicTPs.method || 'adaptive';
+      tpConfidence = signal.dynamicTPs.confidence;
+      
+      message += `🔥 <b>Dynamic TPs (${tpMethod.toUpperCase()}):</b>\n`;
+      message += `• TP1 (${config.trading.tp1PositionPercent}%): <b>$${tp1Price.toFixed(4)}</b> (+${((tp1Price - entryPrice) / entryPrice * 100).toFixed(1)}%) 🎯\n`;
+      message += `• TP2 (${config.trading.tp2PositionPercent}%): <b>$${tp2Price.toFixed(4)}</b> (+${((tp2Price - entryPrice) / entryPrice * 100).toFixed(1)}%) �\n`;
+      message += `• TP3 (${config.trading.tp3PositionPercent}%): <b>$${tp3Price.toFixed(4)}</b> (+${((tp3Price - entryPrice) / entryPrice * 100).toFixed(1)}%) �\n`;
+      
+      if (tpConfidence) {
+        message += `• TP Confidence: <b>${tpConfidence.toFixed(1)}%</b> 🔬\n`;
+      }
+      
+      // Show calculation methods used
+      if (signal.dynamicTPs.calculations) {
+        const methods = Object.keys(signal.dynamicTPs.calculations).join(', ');
+        message += `• Methods: <i>${methods}</i>\n`;
+      }
+    } else {
+      // Fallback to static percentage-based TPs
+      const calculateTP = (price, percent, type) => {
+        return type === 'LONG' ? 
+          price * (1 + percent / 100) : 
+          price * (1 - percent / 100);
+      };
+      
+      tp1Price = calculateTP(entryPrice, config.trading.takeProfit1Percent, signal.type);
+      tp2Price = calculateTP(entryPrice, config.trading.takeProfit2Percent, signal.type);
+      tp3Price = calculateTP(entryPrice, config.trading.takeProfit3Percent, signal.type);
+      
+      message += `📊 <b>Static TPs (Percentage-based):</b>\n`;
+      message += `• TP1 (${config.trading.tp1PositionPercent}%): <b>$${tp1Price.toFixed(4)}</b> (+${config.trading.takeProfit1Percent}%) 🎯\n`;
+      message += `• TP2 (${config.trading.tp2PositionPercent}%): <b>$${tp2Price.toFixed(4)}</b> (+${config.trading.takeProfit2Percent}%) 🚀\n`;
+      message += `• TP3 (${config.trading.tp3PositionPercent}%): <b>$${tp3Price.toFixed(4)}</b> (+${config.trading.takeProfit3Percent}%) 💎\n`;
+      message += `• Mode: <i>Fixed percentage targets</i>\n`;
+    }
+    
+    // Legacy TP for backwards compatibility
     if (signal.takeProfit) {
-      message += `• Take Profit: <b>$${signal.takeProfit.toFixed(4)}</b>\n`;
+      message += `• Full TP: <b>$${signal.takeProfit.toFixed(4)}</b> (Legacy)\n`;
     }
     message += '\n';
     
@@ -357,77 +457,195 @@ class TelegramBot {
   }
 
   /**
-   * 📊 Send daily summary
+   * 🎯 Send Take Profit notification
    */
-  async sendDailySummary(summary) {
-    if (!this.initialized || !config.telegram.notifications.dailySummary) return;
+  async sendTPNotification(trade, level, profit) {
+    if (!this.initialized || !config.telegram.notifications.trades) {
+      return;
+    }
 
     try {
-      const profitEmoji = summary.totalPnL >= 0 ? '💚' : '❤️';
-      const winRateEmoji = summary.winRate >= 75 ? '🔥' : summary.winRate >= 65 ? '✅' : '⚠️';
+      const tpEmojis = {
+        'TP1': '🎯',
+        'TP2': '🚀', 
+        'TP3': '💎'
+      };
       
-      let message = `📊 <b>Daily Trading Summary</b> ${profitEmoji}\n\n`;
+      const emoji = tpEmojis[level] || '🎯';
+      const profitEmoji = profit > 0 ? '💰' : '💸';
       
-      // Performance
-      message += `💰 <b>Performance:</b>\n`;
-      message += `• Total P&L: <b>${summary.totalPnL >= 0 ? '+' : ''}$${summary.totalPnL.toFixed(2)}</b>\n`;
-      message += `• Win Rate: ${winRateEmoji} <b>${summary.winRate.toFixed(1)}%</b>\n`;
-      message += `• Trades: <b>${summary.totalTrades}</b> (${summary.winningTrades}W/${summary.losingTrades}L)\n`;
-      message += `• Best Trade: <b>+$${summary.bestTrade.toFixed(2)}</b>\n`;
-      message += `• Worst Trade: <b>-$${Math.abs(summary.worstTrade).toFixed(2)}</b>\n\n`;
+      let message = `${emoji} <b>${level} HIT!</b> ${profitEmoji}\n\n`;
       
-      // Activity
-      message += `📈 <b>Trading Activity:</b>\n`;
-      message += `• Signals Generated: <b>${summary.signalsGenerated}</b>\n`;
-      message += `• Signals Executed: <b>${summary.signalsExecuted}</b>\n`;
-      message += `• Avg Confidence: <b>${summary.avgConfidence.toFixed(1)}%</b>\n`;
-      message += `• Most Traded: <b>${summary.mostTradedCoin}</b>\n\n`;
+      message += `📊 <b>Trade Details:</b>\n`;
+      message += `• Symbol: <b>${trade.symbol} ${trade.type}</b>\n`;
+      message += `• Level: <b>${level}</b>\n`;
+      message += `• Profit: <b>${profit > 0 ? '+' : ''}$${profit.toFixed(2)}</b>\n`;
+      message += `• Remaining: <b>${trade.remainingQuantity.toFixed(4)}</b>\n\n`;
       
-      // Account
-      message += `💼 <b>Account:</b>\n`;
-      message += `• Balance: <b>$${summary.currentBalance.toFixed(2)}</b>\n`;
-      message += `• Daily Change: <b>${summary.dailyChange >= 0 ? '+' : ''}${summary.dailyChange.toFixed(2)}%</b>\n`;
-      message += `• Open Positions: <b>${summary.openPositions}</b>\n\n`;
+      message += `💼 <b>Position Status:</b>\n`;
+      message += `• Total P&L: <b>$${trade.realizedPnL.toFixed(2)}</b>\n`;
+      message += `• Status: <b>${trade.status}</b>\n`;
       
-      // Goals
-      message += `🎯 <b>Goals Progress:</b>\n`;
-      message += `• Daily Target: <b>$${config.profitTargets.daily}</b>\n`;
-      message += `• Progress: <b>${((summary.totalPnL / config.profitTargets.daily) * 100).toFixed(1)}%</b>\n`;
-      message += `• Win Rate Target: <b>${config.profitTargets.winRateTarget}%</b>\n\n`;
+      if (trade.remainingQuantity > 0) {
+        const nextTP = level === 'TP1' ? 'TP2' : level === 'TP2' ? 'TP3' : 'None';
+        if (nextTP !== 'None') {
+          message += `• Next Target: <b>${nextTP}</b>\n`;
+        }
+        
+        if (trade.stopLoss.trailing) {
+          message += `• Trailing Stop: <b>$${trade.stopLoss.price.toFixed(4)}</b>\n`;
+        }
+      } else {
+        message += `• <b>Position Fully Closed!</b> 🎉\n`;
+      }
       
-      message += `📅 <i>${new Date().toLocaleDateString()}</i>`;
+      message += `\n⏰ <i>${new Date().toLocaleString()}</i>`;
       
       await this.sendMessage(message, { parse_mode: 'HTML' });
       
-      logger.info('📨 Daily summary sent');
+      logger.info(`📨 ${level} notification sent for ${trade.symbol}: +$${profit.toFixed(2)}`);
     } catch (error) {
-      logger.error('❌ Error sending daily summary:', error.message);
+      logger.error(`❌ Error sending ${level} notification:`, error.message);
     }
   }
 
   /**
-   * ⚠️ Send error alert
+   * 🛑 Send Stop Loss notification
    */
-  async sendError(error, context = '') {
-    if (!this.initialized || !config.telegram.notifications.errors) return;
+  async sendStopLossNotification(trade, loss) {
+    if (!this.initialized || !config.telegram.notifications.trades) {
+      return;
+    }
 
     try {
-      let message = `🚨 <b>Error Alert</b>\n\n`;
+      let message = `🛑 <b>STOP LOSS HIT</b> 💸\n\n`;
       
-      if (context) {
-        message += `📍 <b>Context:</b> ${context}\n`;
+      message += `📊 <b>Trade Details:</b>\n`;
+      message += `• Symbol: <b>${trade.symbol} ${trade.type}</b>\n`;
+      message += `• Loss: <b>$${loss.toFixed(2)}</b>\n`;
+      message += `• Entry: <b>$${trade.entryPrice.toFixed(4)}</b>\n`;
+      message += `• Exit: <b>$${trade.stopLoss.price.toFixed(4)}</b>\n\n`;
+      
+      message += `💼 <b>Final Position:</b>\n`;
+      message += `• Total P&L: <b>$${trade.realizedPnL.toFixed(2)}</b>\n`;
+      message += `• Status: <b>STOPPED</b>\n`;
+      
+      // Show any partial profits taken
+      const { tp1, tp2, tp3 } = trade.takeProfits;
+      let partialProfits = 0;
+      if (tp1.executed) partialProfits += 1;
+      if (tp2.executed) partialProfits += 1;
+      if (tp3.executed) partialProfits += 1;
+      
+      if (partialProfits > 0) {
+        message += `• TPs Hit: <b>${partialProfits}/3</b> ✅\n`;
+        message += `• <i>Some profit was secured before stop loss</i>\n`;
       }
       
-      message += `❌ <b>Error:</b> ${error.message || error}\n`;
-      message += `⏰ <b>Time:</b> ${new Date().toLocaleString()}\n\n`;
-      
-      message += `🔧 Please check the logs for more details.`;
+      message += `\n⏰ <i>${new Date().toLocaleString()}</i>`;
       
       await this.sendMessage(message, { parse_mode: 'HTML' });
       
-      logger.info('📨 Error alert sent');
-    } catch (err) {
-      logger.error('❌ Error sending error alert:', err.message);
+      logger.warn(`📨 Stop loss notification sent for ${trade.symbol}: $${loss.toFixed(2)}`);
+    } catch (error) {
+      logger.error('❌ Error sending stop loss notification:', error.message);
+    }
+  }
+
+  /**
+   * 📈 Send trailing stop update notification
+   */
+  async sendTrailingStopUpdate(trade, oldPrice, newPrice) {
+    if (!this.initialized || !config.telegram.notifications.trades) {
+      return;
+    }
+
+    try {
+      // Only send periodic updates, not every small change
+      const priceChange = Math.abs(newPrice - oldPrice);
+      const percentChange = (priceChange / oldPrice) * 100;
+      
+      // Only notify for significant moves (0.5%+)
+      if (percentChange < 0.5) {
+        return;
+      }
+      
+      let message = `📈 <b>Trailing Stop Updated</b>\n\n`;
+      
+      message += `📊 <b>Trade Details:</b>\n`;
+      message += `• Symbol: <b>${trade.symbol} ${trade.type}</b>\n`;
+      message += `• Old Stop: <b>$${oldPrice.toFixed(4)}</b>\n`;
+      message += `• New Stop: <b>$${newPrice.toFixed(4)}</b>\n`;
+      message += `• Protection: <b>+${((newPrice - trade.entryPrice) / trade.entryPrice * 100).toFixed(2)}%</b>\n\n`;
+      
+      message += `💼 <b>Position Status:</b>\n`;
+      message += `• Remaining: <b>${trade.remainingQuantity.toFixed(4)}</b>\n`;
+      message += `• Unrealized P&L: <b>$${trade.unrealizedPnL.toFixed(2)}</b>\n`;
+      
+      message += `\n⏰ <i>${new Date().toLocaleString()}</i>`;
+      
+      await this.sendMessage(message, { parse_mode: 'HTML' });
+      
+      logger.info(`📨 Trailing stop notification sent for ${trade.symbol}`);
+    } catch (error) {
+      logger.error('❌ Error sending trailing stop notification:', error.message);
+    }
+  }
+
+  /**
+   * 🎉 Send trade completion summary
+   */
+  async sendTradeCompletionSummary(trade) {
+    if (!this.initialized || !config.telegram.notifications.trades) {
+      return;
+    }
+
+    try {
+      const isProfit = trade.realizedPnL > 0;
+      const emoji = isProfit ? '🎉' : '😞';
+      const statusEmoji = isProfit ? '💰' : '💸';
+      
+      let message = `${emoji} <b>TRADE COMPLETED</b> ${statusEmoji}\n\n`;
+      
+      message += `📊 <b>Trade Summary:</b>\n`;
+      message += `• Symbol: <b>${trade.symbol} ${trade.type}</b>\n`;
+      message += `• Entry: <b>$${trade.entryPrice.toFixed(4)}</b>\n`;
+      message += `• Duration: <b>${this.getTradeDuration(trade)}</b>\n`;
+      message += `• Final P&L: <b>${isProfit ? '+' : ''}$${trade.realizedPnL.toFixed(2)}</b>\n\n`;
+      
+      message += `🎯 <b>Take Profit Performance:</b>\n`;
+      const { tp1, tp2, tp3 } = trade.takeProfits;
+      message += `• TP1: ${tp1.executed ? '✅' : '❌'} ${tp1.executed ? `($${((tp1.price - trade.entryPrice) * tp1.quantity).toFixed(2)})` : ''}\n`;
+      message += `• TP2: ${tp2.executed ? '✅' : '❌'} ${tp2.executed ? `($${((tp2.price - trade.entryPrice) * tp2.quantity).toFixed(2)})` : ''}\n`;
+      message += `• TP3: ${tp3.executed ? '✅' : '❌'} ${tp3.executed ? `($${((tp3.price - trade.entryPrice) * tp3.quantity).toFixed(2)})` : ''}\n\n`;
+      
+      message += `📈 <b>Performance:</b>\n`;
+      const returnPercent = (trade.realizedPnL / (trade.entryPrice * trade.quantity)) * 100;
+      message += `• Return: <b>${returnPercent.toFixed(2)}%</b>\n`;
+      message += `• Risk/Reward: <b>1:${Math.abs(trade.realizedPnL / trade.riskAmount).toFixed(2)}</b>\n`;
+      
+      message += `\n⏰ <i>${new Date().toLocaleString()}</i>`;
+      
+      await this.sendMessage(message, { parse_mode: 'HTML' });
+      
+      logger.info(`📨 Trade completion summary sent for ${trade.symbol}: $${trade.realizedPnL.toFixed(2)}`);
+    } catch (error) {
+      logger.error('❌ Error sending trade completion summary:', error.message);
+    }
+  }
+
+  /**
+   * ⏱️ Calculate trade duration
+   */
+  getTradeDuration(trade) {
+    const duration = Date.now() - trade.timestamp;
+    const hours = Math.floor(duration / (1000 * 60 * 60));
+    const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
     }
   }
 

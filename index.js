@@ -32,6 +32,7 @@ const SignalAPI = require('./signalAPI');
 const DailySummaryBot = require('./dailySummaryBot');
 const StrategyRegenerator = require('./strategyRegenerator');
 const DashboardServer = require('./dashboard-server');
+const AdvancedTradeManager = require('./advancedTradeManager'); // ✅ NEW: Advanced Trade Manager
 
 class ProTradeAI {
   constructor() {
@@ -41,6 +42,9 @@ class ProTradeAI {
     this.signalInterval = null;
     this.monitoringInterval = null;
     this.cleanupInterval = null; // ✅ Add cleanup interval tracking
+    
+    // ✅ Make bot instance globally available for Advanced Trade Manager
+    global.proTradeAI = this;
     
     // ✅ Dynamic frequency adjustment
     this.dynamicInterval = config.strategy.updateInterval; // Start with base interval
@@ -194,6 +198,11 @@ class ProTradeAI {
       telegramBot: this.modules.telegramBot
     });
 
+    // ✅ Initialize Advanced Trade Manager with Multiple Take Profits
+    this.modules.advancedTradeManager = new AdvancedTradeManager();
+    await this.modules.advancedTradeManager.init();
+    logger.info('✅ Advanced Trade Manager with TP1/TP2/TP3 initialized');
+
     logger.info('✅ All modules initialized successfully');
   }
 
@@ -317,6 +326,24 @@ class ProTradeAI {
 
             if (approval.approved) {
               logger.info(`✅ Signal approved: ${signal.symbol} ${signal.type} (confidence: ${signal.finalConfidence}%)`);
+              
+              // ✅ FIX: Execute the approved signal
+              try {
+                // Use Advanced Trade Manager for TP1/TP2/TP3 execution
+                if (this.modules.advancedTradeManager && signal.dynamicTPs) {
+                  await this.modules.advancedTradeManager.executeSignal(signal);
+                  logger.info(`🎯 Advanced trade executed for ${signal.symbol} with multiple TPs`);
+                } else {
+                  // Fallback to legacy trade executor
+                  const trade = await this.modules.tradeExecutor.executeSignal(signal);
+                  if (trade) {
+                    logger.info(`📈 Trade executed: ${signal.symbol} ${signal.type} @ $${signal.entryPrice}`);
+                  }
+                }
+              } catch (executeError) {
+                logger.error(`❌ Trade execution failed for ${signal.symbol}:`, executeError.message);
+                await this.modules.telegramBot?.sendError(executeError, `Trade execution failed for ${signal.symbol}`);
+              }
             } else {
               logger.info(`❌ Signal not approved: ${signal.symbol} ${signal.type} - ${approval.reason}`);
             }
@@ -360,7 +387,12 @@ class ProTradeAI {
       try {
         if (!this.running) return;
 
-        // Check stop loss and take profit
+        // ✅ Monitor Advanced Trade Manager (TP1/TP2/TP3)
+        if (this.modules.advancedTradeManager) {
+          await this.modules.advancedTradeManager.monitorTrades();
+        }
+
+        // Check stop loss and take profit (legacy)
         await this.modules.tradeExecutor.checkStopLossAndTakeProfit();
 
         // Log system health
@@ -373,7 +405,7 @@ class ProTradeAI {
 
     // Monitor every minute
     this.monitoringInterval = setInterval(monitorPositions, 60000);
-    logger.info('👀 Monitoring started (60s intervals)');
+    logger.info('👀 Monitoring started (60s intervals) with Advanced Trade Manager');
   }
 
   /**

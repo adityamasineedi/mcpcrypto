@@ -5,13 +5,14 @@ const MarketFetcher = require('./marketFetcher');
 const MCPEngine = require('./mcpEngine');
 const OpenAIEngine = require('./openAIEngine');
 const CoinSelector = require('./coinSelector');
+const DynamicTPCalculator = require('./dynamicTPCalculator');
 
-class SignalEngine {
-  constructor() {
+class SignalEngine {  constructor() {
     this.marketFetcher = new MarketFetcher();
     this.mcpEngine = new MCPEngine();
     this.aiEngine = new OpenAIEngine();
     this.coinSelector = new CoinSelector();
+    this.dynamicTPCalculator = new DynamicTPCalculator();
     this.lastSignals = new Map();
     this.signalHistory = [];
     this.initialized = false;
@@ -27,12 +28,12 @@ class SignalEngine {
    * 🚀 Initialize Signal Engine
    */
   async init() {
-    try {
-      await Promise.all([
+    try {      await Promise.all([
         this.marketFetcher.init(),
         this.mcpEngine.init(),
         this.aiEngine.init(),
-        this.coinSelector.init()
+        this.coinSelector.init(),
+        this.dynamicTPCalculator.init()
       ]);
 
       this.initialized = true;
@@ -173,10 +174,8 @@ class SignalEngine {
       if (aiAnalysis.confidence < config.ai.confidence.minimum + 10) { // +10% buffer for quality
         logger.debug(`❌ AI confidence too low for ${symbol}: ${aiAnalysis.confidence}%`);
         return null;
-      }
-
-      // Create final signal
-      const finalSignal = this.createFinalSignal(symbol, technicalSignal, aiAnalysis, technicalData, marketContext);
+      }      // Create final signal
+      const finalSignal = await this.createFinalSignal(symbol, technicalSignal, aiAnalysis, technicalData, marketContext);
 
       // ✅ Check for duplicate in time window (more sophisticated than just timing)
       if (this.isDuplicateInTimeWindow(symbol, finalSignal)) {
@@ -915,8 +914,7 @@ class SignalEngine {
 
   /**
    * 🏗️ Create final signal
-   */
-  createFinalSignal(symbol, technicalSignal, aiAnalysis, technicalData, marketContext) {
+   */  async createFinalSignal(symbol, technicalSignal, aiAnalysis, technicalData, marketContext) {
     // Calculate final confidence using AI consensus
     const finalConfidence = Math.min(100, Math.max(0, aiAnalysis.confidence || 50));
     
@@ -928,9 +926,46 @@ class SignalEngine {
     // Calculate position size
     const positionSize = this.calculatePositionSize(technicalSignal.entryPrice, aiAnalysis.risk_level);
     
-    // Calculate stop loss and take profit
+    // Calculate stop loss
     const stopLoss = this.calculateStopLoss(technicalSignal.entryPrice, technicalSignal.type, aiAnalysis.stop_loss);
-    const takeProfit = this.calculateTakeProfit(technicalSignal.entryPrice, technicalSignal.type, aiAnalysis.price_target);
+    
+    // 🚀 NEW: Dynamic Take Profit Calculation
+    let takeProfit, dynamicTPs;
+    try {
+      const marketData = {
+        currentPrice: technicalData.currentPrice,
+        volume: technicalData.volume,
+        ohlc: technicalData.ohlc || [],
+        volatility: technicalData.volatility
+      };
+      
+      const preliminarySignal = {
+        symbol,
+        type: aiAnalysis.recommendation.includes('BUY') ? 'LONG' : 
+              aiAnalysis.recommendation.includes('SELL') ? 'SHORT' : 'HOLD',
+        entryPrice: technicalSignal.entryPrice,
+        currentPrice: technicalData.currentPrice,
+        context: marketContext
+      };
+      
+      // Calculate dynamic TPs
+      dynamicTPs = await this.dynamicTPCalculator.calculateDynamicTPs(
+        preliminarySignal, 
+        marketData, 
+        technicalData
+      );
+      
+      // Use the weighted TP1 as the legacy takeProfit field
+      takeProfit = dynamicTPs.tp1.price;
+      
+      logger.info(`🎯 Dynamic TPs calculated for ${symbol}: TP1=${dynamicTPs.tp1.price.toFixed(4)}, TP2=${dynamicTPs.tp2.price.toFixed(4)}, TP3=${dynamicTPs.tp3.price.toFixed(4)}`);
+      
+    } catch (error) {
+      logger.warn(`⚠️ Dynamic TP calculation failed for ${symbol}, falling back to static: ${error.message}`);
+      // Fallback to legacy calculation
+      takeProfit = this.calculateTakeProfit(technicalSignal.entryPrice, technicalSignal.type, aiAnalysis.price_target);
+      dynamicTPs = null;
+    }
     
     // ✅ ENHANCED: Calculate expected hold duration and exit timing
     const timing = this.calculatePositionTiming(technicalSignal, aiAnalysis, marketContext);
@@ -951,6 +986,16 @@ class SignalEngine {
       risk: aiAnalysis.risk_level,
       timeHorizon: aiAnalysis.time_horizon,
       marketRegime: marketContext.regime,
+      
+      // 🚀 NEW: Dynamic Take Profit Data
+      dynamicTPs: dynamicTPs ? {
+        tp1: dynamicTPs.tp1,
+        tp2: dynamicTPs.tp2,
+        tp3: dynamicTPs.tp3,
+        method: dynamicTPs.primaryMethod,
+        confidence: dynamicTPs.confidence,
+        calculations: dynamicTPs.calculations
+      } : null,
       
       // ✅ NEW: Enhanced timing information
       timing: {
@@ -1215,12 +1260,34 @@ class SignalEngine {
         logger.info(`🚫 ${symbol}: WEAK signal blocked - only MEDIUM/STRONG allowed`);
         return false;
       }
-      
-      // 🚨 CRITICAL: Block low confidence signals immediately  
+        // 🚨 CRITICAL: Block low confidence signals immediately  
       const minConfidence = parseFloat(process.env.MIN_SIGNAL_CONFIDENCE) || 75;
       if (signal.finalConfidence < minConfidence) {
         logger.info(`🚫 ${symbol}: Low confidence ${signal.finalConfidence}% blocked (minimum: ${minConfidence}%)`);
         return false;
+      }
+      
+      // 🚨 NEW: AI Consensus Filtering - Block STRONG_SELL from any AI
+      if (signal.ai && signal.ai.sources) {
+        const aiSources = signal.ai.sources;
+        const hasStrongSell = Object.values(aiSources).some(ai => 
+          ai.recommendation && ai.recommendation.includes('STRONG_SELL')
+        );
+        
+        if (hasStrongSell) {
+          logger.info(`🚫 ${symbol}: STRONG_SELL from AI detected - signal blocked`);
+          return false;
+        }
+        
+        // Require at least 2 AIs to recommend BUY/STRONG_BUY
+        const buyRecommendations = Object.values(aiSources).filter(ai => 
+          ai.recommendation && (ai.recommendation.includes('BUY') || ai.recommendation.includes('STRONG_BUY'))
+        ).length;
+        
+        if (buyRecommendations < 2) {
+          logger.info(`🚫 ${symbol}: Insufficient AI consensus - only ${buyRecommendations} BUY recommendations (minimum: 2)`);
+          return false;
+        }
       }
       
       // 2. ✅ Technical confidence check
